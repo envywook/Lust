@@ -146,14 +146,41 @@ class SubscriptionRepository(context: Context) {
 }
 
 object SubscriptionParser {
-    fun parse(subscriptionId: String, body: String): List<ServerProfile> {
+    data class ParseReport(
+        val profiles: List<ServerProfile>,
+        val unsupportedCount: Int,
+        val invalidCount: Int,
+        val duplicateCount: Int,
+    )
+
+    fun parse(subscriptionId: String, body: String): List<ServerProfile> =
+        parseReport(subscriptionId, body).profiles
+
+    fun parseReport(subscriptionId: String, body: String): ParseReport {
         val content = decodeMaybeBase64(body.trim())
-        return content.lineSequence()
+        val profiles = linkedMapOf<String, ServerProfile>()
+        var unsupported = 0
+        var invalid = 0
+        var duplicates = 0
+        content.lineSequence()
             .map(String::trim)
             .filter { it.isNotBlank() && !it.startsWith("#") }
-            .mapNotNull { line -> runCatching { parseLine(subscriptionId, line) }.getOrNull() }
-            .distinctBy { "${it.protocol}:${it.address}:${it.port}:${it.name}" }
-            .toList()
+            .forEach { line ->
+                val supported = line.startsWith("vmess://") || line.startsWith("vless://") ||
+                    line.startsWith("trojan://") || line.startsWith("ss://")
+                if (!supported) {
+                    unsupported++
+                    return@forEach
+                }
+                val profile = runCatching { parseLine(subscriptionId, line) }.getOrNull()
+                if (profile == null) {
+                    invalid++
+                    return@forEach
+                }
+                val key = "${profile.protocol}:${profile.address}:${profile.port}:${profile.name}"
+                if (profiles.putIfAbsent(key, profile) != null) duplicates++
+            }
+        return ParseReport(profiles.values.toList(), unsupported, invalid, duplicates)
     }
 
     private fun parseLine(subscriptionId: String, line: String): ServerProfile? = when {
@@ -196,16 +223,24 @@ object SubscriptionParser {
         val query = parseQuery(uri.rawQuery)
         val name = decode(uri.rawFragment ?: "$address:$port")
         val settings = when (protocol) {
-            "vless" -> JSONObject().put("vnext", JSONArray().put(JSONObject().apply {
+            "vless" -> {
+                val userId = uri.userInfo?.takeIf(String::isNotBlank)
+                    ?: error("В VLESS-ссылке отсутствует UUID пользователя")
+                JSONObject().put("vnext", JSONArray().put(JSONObject().apply {
                 put("address", address); put("port", port)
                 put("users", JSONArray().put(JSONObject().apply {
-                    put("id", uri.userInfo); put("encryption", query["encryption"] ?: "none")
+                    put("id", userId); put("encryption", query["encryption"] ?: "none")
                     put("flow", query["flow"] ?: "")
                 }))
             }))
-            "trojan" -> JSONObject().put("servers", JSONArray().put(JSONObject().apply {
-                put("address", address); put("port", port); put("password", decode(uri.userInfo ?: ""))
-            }))
+            }
+            "trojan" -> {
+                val password = uri.userInfo?.takeIf(String::isNotBlank)
+                    ?: error("В Trojan-ссылке отсутствует пароль")
+                JSONObject().put("servers", JSONArray().put(JSONObject().apply {
+                    put("address", address); put("port", port); put("password", decode(password))
+                }))
+            }
             else -> parseShadowsocksSettings(source, address, port)
         }
         return profile(subscriptionId, name, protocol, address, port, settings, streamSettings(
