@@ -3,9 +3,10 @@ package com.envy.dualcorevpn.core
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
+import com.envy.dualcorevpn.logging.AppLog
 
 internal class NativeXrayGateway(
-    private val controller: CoreController = Libv2ray.newCoreController(NoOpCoreCallbackHandler),
+    private val controller: CoreController = Libv2ray.newCoreController(LoggingCoreCallbackHandler),
 ) : XrayGateway {
     override fun start(config: String, tunFileDescriptor: Int) {
         controller.startLoop(config, tunFileDescriptor)
@@ -29,9 +30,20 @@ internal class NativeXrayGateway(
         }
     }
 
-    private object NoOpCoreCallbackHandler : CoreCallbackHandler {
-        override fun onEmitStatus(type: Long, message: String?): Long = 0L
-        override fun shutdown(): Long = 0L
-        override fun startup(): Long = 0L
+    private object LoggingCoreCallbackHandler : CoreCallbackHandler {
+        override fun onEmitStatus(type: Long, message: String?): Long {
+            message?.takeIf(String::isNotBlank)?.let { AppLog.info("Xray", "[$type] $it") }
+            return 0L
+        }
+
+        override fun shutdown(): Long {
+            AppLog.info("Xray", "Core shutdown callback")
+            return 0L
+        }
+
+        override fun startup(): Long {
+            AppLog.info("Xray", "Core startup callback")
+            return 0L
+        }
     }
 }

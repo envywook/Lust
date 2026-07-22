@@ -14,6 +14,7 @@ data class HevConfig(
     fun toYaml(): String = """
         tunnel:
           mtu: $mtu
+          ipv4: 198.18.0.1
         socks5:
           address: '$socksHost'
           port: $socksPort

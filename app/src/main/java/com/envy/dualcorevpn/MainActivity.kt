@@ -53,6 +53,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.envy.dualcorevpn.core.VpnSessionState
 import com.envy.dualcorevpn.core.VpnSessionStore
+import com.envy.dualcorevpn.logging.AppLog
+import com.envy.dualcorevpn.logging.LogEntry
+import com.envy.dualcorevpn.logging.LogLevel
 import com.envy.dualcorevpn.subscription.ServerProfile
 import com.envy.dualcorevpn.subscription.Subscription
 import com.envy.dualcorevpn.subscription.SubscriptionRepository
@@ -85,6 +88,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = SubscriptionRepository(applicationContext)
+        AppLog.initialize(java.io.File(filesDir, "logs"))
+        AppLog.info("UI", "Application opened")
         setContent {
             LustTheme {
                 LustApp(
@@ -151,15 +156,31 @@ class MainActivity : ComponentActivity() {
 private fun LustTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = androidx.compose.material3.darkColorScheme(
-            primary = Accent, onPrimary = Background, background = Background, onBackground = Accent,
-            surface = SurfaceColor, onSurface = Accent, error = Danger,
+            primary = Accent,
+            onPrimary = Background,
+            primaryContainer = SurfaceRaised,
+            onPrimaryContainer = Accent,
+            secondary = Muted,
+            onSecondary = Background,
+            background = Background,
+            onBackground = Accent,
+            surface = SurfaceColor,
+            onSurface = Accent,
+            surfaceVariant = SurfaceRaised,
+            onSurfaceVariant = Muted,
+            error = Danger,
+            onError = Background,
         ),
         content = content,
     )
 }
 
 private enum class AppTab(val title: String, val glyph: String) {
-    HOME("Главная", "Ω"), SERVERS("Серверы", "◉"), SUBSCRIPTIONS("Подписки", "≋")
+    HOME("Главная", "⌁"),
+    SERVERS("Серверы", "◉"),
+    SUBSCRIPTIONS("Подписки", "≋"),
+    LOGS("Журнал", "▤"),
+    SETTINGS("Настройки", "⚙"),
 }
 
 @Composable
@@ -178,6 +199,7 @@ private fun LustApp(
 ) {
     revision.hashCode()
     val vpnState by VpnSessionStore.state.collectAsState()
+    val logEntries by AppLog.entries.collectAsState()
     var tab by remember { mutableStateOf(AppTab.HOME) }
     val subscriptions = repository.subscriptions()
     val servers = repository.servers()
@@ -189,6 +211,8 @@ private fun LustApp(
                 AppTab.HOME -> HomeScreen(vpnState, selected, servers.size, subscriptions.size, onConnect, onDisconnect) { tab = it }
                 AppTab.SERVERS -> ServersScreen(servers, selected, onSelect) { tab = AppTab.SUBSCRIPTIONS }
                 AppTab.SUBSCRIPTIONS -> SubscriptionsScreen(subscriptions, loading, onAddSubscription, onUpdateSubscription, onRemoveSubscription)
+                AppTab.LOGS -> LogsScreen(logEntries, onClear = AppLog::clear)
+                AppTab.SETTINGS -> SettingsScreen()
             }
             if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Accent)
@@ -231,7 +255,7 @@ private fun HomeScreen(
         item {
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("LUST", fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 5.sp)
+                Text("LUST", color = Accent, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 5.sp)
                 Spacer(Modifier.weight(1f))
                 StatusDot(connected, busy)
                 Text(stateLabel(state), color = if (connected) Success else Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
@@ -358,6 +382,116 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onAdd: (String, String)
         confirmButton = { Button(onClick = { onAdd(name.trim(), url.trim()) }, enabled = url.startsWith("http")) { Text("ДОБАВИТЬ") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ОТМЕНА") } },
     )
+}
+
+@Composable
+private fun LogsScreen(entries: List<LogEntry>, onClear: () -> Unit) {
+    var minimumLevel by remember { mutableStateOf(LogLevel.DEBUG) }
+    val levels = LogLevel.entries
+    val visible = entries.filter { it.level.ordinal >= minimumLevel.ordinal }.asReversed()
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ScreenTitle("Журнал", "${entries.size} событий сохранено", Modifier.weight(1f))
+            TextButton(onClick = onClear) { Text("ОЧИСТИТЬ", color = Danger) }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            levels.forEach { level ->
+                val selected = minimumLevel == level
+                TextButton(
+                    onClick = { minimumLevel = level },
+                    modifier = Modifier.background(
+                        if (selected) SurfaceRaised else Color.Transparent,
+                        RoundedCornerShape(10.dp),
+                    ),
+                ) { Text(level.name, color = if (selected) Accent else Muted, fontSize = 11.sp) }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (visible.isEmpty()) {
+            EmptyState("Журнал пуст", "События интерфейса, VPN service, Xray и HEV появятся здесь.", "ОБНОВИТЬ") { }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(visible, key = { "${it.timestampMillis}:${it.source}:${it.message.hashCode()}" }) { entry ->
+                    LogEntryCard(entry)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogEntryCard(entry: LogEntry) {
+    val levelColor = when (entry.level) {
+        LogLevel.DEBUG -> Muted
+        LogLevel.INFO -> Accent
+        LogLevel.WARN -> Color(0xFFFFC66D)
+        LogLevel.ERROR -> Danger
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(entry.level.name, color = levelColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text("  ${entry.source}", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Text(
+                    java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date(entry.timestampMillis)),
+                    color = Muted,
+                    fontSize = 10.sp,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(entry.message, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen() {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { ScreenTitle("Настройки", "Ядра, VPN, DNS, маршрутизация и диагностика") }
+        item { SettingsSectionTitle("ЯДРО") }
+        item {
+            SettingsCard("Xray-core", "Активно · AndroidLibXrayLite", "XRAY")
+        }
+        item {
+            SettingsCard("sing-box", "Бинарное ядро пока не подключено — переключатель не подменён заглушкой", "НЕДОСТУПНО", enabled = false)
+        }
+        item { SettingsSectionTitle("ТРАНСПОРТ") }
+        item { SettingsCard("HEV tun2socks", "Android TUN → HEV → SOCKS 127.0.0.1:10808 → Xray", "ВКЛЮЧЕНО") }
+        item { SettingsCard("MTU", "Размер VPN-интерфейса", "1500") }
+        item { SettingsSectionTitle("ДИАГНОСТИКА") }
+        item { SettingsCard("Постоянный журнал", "Core/service stack trace, ротация 2 МБ", "ВКЛЮЧЕНО") }
+        item { SettingsCard("Версия приложения", "Ранняя тестовая сборка", "0.1.0") }
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    Text(text, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+}
+
+@Composable
+private fun SettingsCard(title: String, subtitle: String, value: String, enabled: Boolean = true) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = if (enabled) SurfaceColor else SurfaceColor.copy(alpha = .55f)),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold, color = if (enabled) Accent else Muted)
+                Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            }
+            Text(value, color = if (enabled) Success else Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 @Composable private fun ScreenTitle(title: String, subtitle: String, modifier: Modifier = Modifier) = Column(modifier) {

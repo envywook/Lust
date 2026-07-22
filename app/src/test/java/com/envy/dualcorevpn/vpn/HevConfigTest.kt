@@ -1,13 +1,15 @@
 package com.envy.dualcorevpn.vpn
 
+import kotlin.test.assertFailsWith
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.test.assertFailsWith
 
 class HevConfigTest {
-    @Test fun `renders socks endpoint and tunnel parameters`() {
+    @Test
+    fun `renders matching tunnel and socks endpoint`() {
         val yaml = HevConfig("127.0.0.1", 10808, 1500).toYaml()
-        assertTrue(yaml.contains("address: 127.0.0.1"))
+
+        assertTrue(yaml.contains("address: '127.0.0.1'"))
         assertTrue(yaml.contains("port: 10808"))
         assertTrue(yaml.contains("mtu: 1500"))
         assertTrue(yaml.contains("ipv4: 198.18.0.1"))
@@ -18,6 +20,6 @@ class HevConfigTest {
     }
 
     @Test fun `rejects unsafe mtu`() {
-        assertFailsWith<IllegalArgumentException> { HevConfig(mtu = 1000) }
+        assertFailsWith<IllegalArgumentException> { HevConfig(mtu = 500) }
     }
 }

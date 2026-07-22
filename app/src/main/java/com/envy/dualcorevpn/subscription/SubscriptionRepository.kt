@@ -232,6 +232,14 @@ object SubscriptionParser {
         }
         val config = JSONObject().apply {
             put("log", JSONObject().put("loglevel", "warning"))
+            put("inbounds", JSONArray().put(JSONObject().apply {
+                put("tag", "socks-in")
+                put("listen", "127.0.0.1")
+                put("port", 10808)
+                put("protocol", "socks")
+                put("settings", JSONObject().put("udp", true))
+                put("sniffing", JSONObject().put("enabled", true).put("destOverride", JSONArray().put("http").put("tls").put("quic")))
+            }))
             put("outbounds", JSONArray().put(outbound).put(JSONObject().put("tag", "direct").put("protocol", "freedom")))
         }.toString()
         return ServerProfile(UUID.nameUUIDFromBytes("$subscriptionId:$protocol:$address:$port:$name".toByteArray()).toString(), subscriptionId, name, protocol, address, port, config)

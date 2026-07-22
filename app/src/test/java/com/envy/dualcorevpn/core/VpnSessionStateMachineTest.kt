@@ -1,39 +1,34 @@
 package com.envy.dualcorevpn.core
 
 import kotlin.test.assertFailsWith
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VpnSessionStateMachineTest {
     @Test
-    fun `valid connection lifecycle reaches connected then idle`() {
+    fun `valid connection lifecycle reaches connected then disconnected`() {
         val machine = VpnSessionStateMachine()
-        assertTrue(machine.dispatch(VpnSessionState.Preparing))
-        assertTrue(machine.dispatch(VpnSessionState.Connecting))
-        assertTrue(machine.dispatch(VpnSessionState.Connected))
-        assertTrue(machine.dispatch(VpnSessionState.Disconnecting))
-        assertTrue(machine.dispatch(VpnSessionState.Idle))
-        assertEquals(VpnSessionState.Idle, machine.state.value)
+
+        assertEquals(VpnSessionState.Connecting(EngineKind.XRAY), machine.dispatch(VpnEvent.ConnectRequested(EngineKind.XRAY)))
+        assertEquals(VpnSessionState.Connected(EngineKind.XRAY, 123L), machine.dispatch(VpnEvent.Connected(123L)))
+        assertEquals(VpnSessionState.Disconnecting(EngineKind.XRAY), machine.dispatch(VpnEvent.DisconnectRequested))
+        assertEquals(VpnSessionState.Disconnected, machine.dispatch(VpnEvent.Disconnected))
     }
 
     @Test
-    fun `cannot report connected directly from idle`() {
+    fun `cannot report connected directly from disconnected`() {
         val machine = VpnSessionStateMachine()
-        assertFalse(machine.dispatch(VpnSessionState.Connected))
-        assertEquals(VpnSessionState.Idle, machine.state.value)
+        assertFailsWith<IllegalStateException> { machine.dispatch(VpnEvent.Connected(123L)) }
+        assertEquals(VpnSessionState.Disconnected, machine.state)
     }
 
     @Test
-    fun `error can be entered during startup and recovered`() {
+    fun `startup failure keeps engine and message`() {
         val machine = VpnSessionStateMachine()
-        machine.dispatch(VpnSessionState.Preparing)
-        machine.dispatch(VpnSessionState.Connecting)
-        assertTrue(machine.dispatch(VpnSessionState.Error("core failed")))
-        assertTrue(machine.dispatch(VpnSessionState.Idle))
+        machine.dispatch(VpnEvent.ConnectRequested(EngineKind.SING_BOX))
+        assertEquals(
+            VpnSessionState.Error(EngineKind.SING_BOX, "core failed"),
+            machine.dispatch(VpnEvent.Failed("core failed")),
+        )
     }
 }

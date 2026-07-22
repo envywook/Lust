@@ -14,9 +14,13 @@ import com.envy.dualcorevpn.core.EngineKind
 import com.envy.dualcorevpn.core.NativeXrayGateway
 import com.envy.dualcorevpn.core.VpnEvent
 import com.envy.dualcorevpn.core.VpnSessionCoordinator
+import com.envy.dualcorevpn.core.VpnSessionState
+import com.envy.dualcorevpn.core.VpnSessionStore
 import com.envy.dualcorevpn.core.VpnSessionStateMachine
 import com.envy.dualcorevpn.core.XrayConfigValidator
 import com.envy.dualcorevpn.core.XrayEngine
+import com.envy.dualcorevpn.core.XrayRuntime
+import com.envy.dualcorevpn.logging.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,15 +29,21 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 
 class DualCoreVpnService : VpnService() {
     private val stateMachine = VpnSessionStateMachine()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operation: Job? = null
     private var coordinator: VpnSessionCoordinator? = null
+    private var initializationFailure: Throwable? = null
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.initialize(File(filesDir, "logs"))
+        AppLog.info("VPN", "Service created")
+        initializationFailure = runCatching { XrayRuntime.initialize(this) }
+            .exceptionOrNull()
         createNotificationChannel()
     }
 
@@ -53,13 +63,17 @@ class DualCoreVpnService : VpnService() {
         operation?.cancel()
         operation = serviceScope.launch {
             try {
+                initializationFailure?.let { throw IllegalStateException("Xray runtime initialization failed", it) }
                 require(!config.isNullOrBlank()) { "Xray configuration is required" }
+                AppLog.info("VPN", "Starting Xray + HEV session")
                 val session = createCoordinator()
                 coordinator = session
                 session.start(config)
                 stateMachine.dispatch(VpnEvent.Connected(System.currentTimeMillis()))
+                AppLog.info("VPN", "Session connected")
                 updateNotification(getString(R.string.status_connected))
             } catch (error: Throwable) {
+                AppLog.error("VPN", "Session start failed: ${error.message ?: error.javaClass.simpleName}", error)
                 coordinator = null
                 stateMachine.dispatch(VpnEvent.Failed(error.message ?: "VPN start failed"))
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -96,6 +110,14 @@ class DualCoreVpnService : VpnService() {
                     .addRoute("::", 0)
                     .addDnsServer("1.1.1.1")
                     .establish() ?: error("Android refused to establish the VPN interface")
+            },
+            writeConfig = { content ->
+                File(filesDir, "hev-socks5-tunnel.yaml").apply { writeText(content) }.absolutePath
+            },
+            onFailure = { failure ->
+                AppLog.error("HEV", "Native tunnel failed", failure)
+                VpnSessionStore.update(VpnSessionState.Error(EngineKind.XRAY, failure.message ?: "HEV tunnel failed"))
+                serviceScope.launch { runCatching { coordinator?.stop() } }
             },
         )
         return VpnSessionCoordinator(engine, tunTransport)

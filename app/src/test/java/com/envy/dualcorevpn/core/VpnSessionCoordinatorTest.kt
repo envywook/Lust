@@ -1,16 +1,12 @@
 package com.envy.dualcorevpn.core
 
 import kotlin.test.assertFailsWith
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VpnSessionCoordinatorTest {
-    @Test fun `starts engine before transport and stops in reverse order`() = runBlocking {
+    @Test fun `starts engine before transport and stops in reverse order`() = runTest {
         val calls = mutableListOf<String>()
         val coordinator = VpnSessionCoordinator(
             engine = FakeEngine(calls),
@@ -23,7 +19,7 @@ class VpnSessionCoordinatorTest {
         assertEquals(listOf("validate", "transport.start", "engine.start", "engine.stop", "transport.stop"), calls)
     }
 
-    @Test fun `invalid config starts nothing`() = runBlocking {
+    @Test fun `invalid config starts nothing`() = runTest {
         val calls = mutableListOf<String>()
         val coordinator = VpnSessionCoordinator(
             engine = FakeEngine(calls, ValidationResult.Invalid("bad config")),
@@ -36,7 +32,7 @@ class VpnSessionCoordinatorTest {
         assertEquals(listOf("validate"), calls)
     }
 
-    @Test fun `transport failure rolls engine back`() = runBlocking {
+    @Test fun `transport failure rolls engine back`() = runTest {
         val calls = mutableListOf<String>()
         val coordinator = VpnSessionCoordinator(
             engine = FakeEngine(calls),

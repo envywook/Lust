@@ -20,7 +20,7 @@ class HevTunTransport(private val cacheDir: File) : TunTransport {
         configFile.writeText(config.toYaml())
         worker = Thread({
             try {
-                TProxyService.runTun2socks(configFile.absolutePath, tun.fd)
+                TProxyService.start(configFile.absolutePath, tun.fd)
             } finally {
                 running.set(false)
             }
@@ -29,7 +29,7 @@ class HevTunTransport(private val cacheDir: File) : TunTransport {
 
     override fun stop() {
         if (!running.getAndSet(false)) return
-        TProxyService.stopTun2socks()
+        TProxyService.stop()
         worker?.join(3_000)
         worker = null
     }

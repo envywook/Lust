@@ -1,16 +1,10 @@
 package com.envy.dualcorevpn.core
 
-import kotlin.test.assertFailsWith
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XrayConfigValidatorTest {
-    private val validator = XrayConfigValidator()
+    private val validator = XrayConfigValidator
 
     @Test fun `blank config is invalid`() {
         assertTrue(validator.validate(" ") is ValidationResult.Invalid)
@@ -21,7 +15,7 @@ class XrayConfigValidatorTest {
     }
 
     @Test fun `json without inbounds or outbounds is invalid`() {
-        assertTrue(validator.validate("{"log":{}}") is ValidationResult.Invalid)
+        assertTrue(validator.validate("{\"log\":{}}") is ValidationResult.Invalid)
     }
 
     @Test fun `minimal xray structure is valid`() {
