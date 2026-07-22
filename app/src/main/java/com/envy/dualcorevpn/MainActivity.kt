@@ -7,6 +7,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,8 +19,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -46,7 +50,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ShareCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import com.envy.dualcorevpn.core.EngineKind
 import com.envy.dualcorevpn.core.VpnSessionState
 import com.envy.dualcorevpn.core.VpnSessionStore
 import com.envy.dualcorevpn.logging.AppLog
@@ -72,13 +80,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Background = Color(0xFF080A0D)
-private val SurfaceColor = Color(0xFF11151A)
-private val SurfaceRaised = Color(0xFF181D23)
-private val Accent = Color(0xFFE8F0FF)
-private val Muted = Color(0xFF89929D)
-private val Success = Color(0xFF72E5A1)
-private val Danger = Color(0xFFFF707A)
+private val Background = Color(0xFF090D12)
+private val SurfaceColor = Color(0xFF111820)
+private val SurfaceRaised = Color(0xFF17212B)
+private val SurfaceStrong = Color(0xFF1D2A36)
+private val Accent = Color(0xFF65D9FF)
+private val AccentSoft = Color(0xFF173443)
+private val ContentPrimary = Color(0xFFF2F7FA)
+private val Muted = Color(0xFF91A1AF)
+private val Outline = Color(0xFF273744)
+private val Success = Color(0xFF55E39A)
+private val Warning = Color(0xFFFFC66D)
+private val Danger = Color(0xFFFF7280)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: SubscriptionRepository
@@ -209,16 +222,17 @@ private fun LustTheme(content: @Composable () -> Unit) {
         colorScheme = androidx.compose.material3.darkColorScheme(
             primary = Accent,
             onPrimary = Background,
-            primaryContainer = SurfaceRaised,
-            onPrimaryContainer = Accent,
-            secondary = Muted,
+            primaryContainer = AccentSoft,
+            onPrimaryContainer = ContentPrimary,
+            secondary = Success,
             onSecondary = Background,
             background = Background,
-            onBackground = Accent,
+            onBackground = ContentPrimary,
             surface = SurfaceColor,
-            onSurface = Accent,
+            onSurface = ContentPrimary,
             surfaceVariant = SurfaceRaised,
             onSurfaceVariant = Muted,
+            outline = Outline,
             error = Danger,
             onError = Background,
         ),
@@ -226,12 +240,64 @@ private fun LustTheme(content: @Composable () -> Unit) {
     )
 }
 
-private enum class AppTab(val title: String, val glyph: String) {
-    HOME("Главная", "⌁"),
-    SERVERS("Серверы", "◉"),
-    SUBSCRIPTIONS("Подписки", "≋"),
-    LOGS("Журнал", "▤"),
-    SETTINGS("Настройки", "⚙"),
+private enum class AppTab(val title: String) {
+    HOME("Главная"),
+    SERVERS("Серверы"),
+    SUBSCRIPTIONS("Подписки"),
+    LOGS("Журнал"),
+    SETTINGS("Настройки"),
+}
+
+@Composable
+private fun AppTabIcon(tab: AppTab, selected: Boolean) {
+    val color = if (selected) Accent else Muted
+    Canvas(Modifier.size(22.dp)) {
+        val stroke = if (selected) 2.2.dp.toPx() else 1.8.dp.toPx()
+        val line = Stroke(width = stroke)
+        when (tab) {
+            AppTab.HOME -> {
+                val roof = Path().apply {
+                    moveTo(size.width * .16f, size.height * .48f)
+                    lineTo(size.width * .5f, size.height * .18f)
+                    lineTo(size.width * .84f, size.height * .48f)
+                }
+                drawPath(roof, color, style = line)
+                val body = Path().apply {
+                    moveTo(size.width * .24f, size.height * .42f)
+                    lineTo(size.width * .24f, size.height * .82f)
+                    lineTo(size.width * .76f, size.height * .82f)
+                    lineTo(size.width * .76f, size.height * .42f)
+                }
+                drawPath(body, color, style = line)
+            }
+            AppTab.SERVERS -> {
+                drawCircle(color, radius = size.minDimension * .29f, center = center, style = line)
+                drawCircle(color, radius = stroke * .75f, center = center)
+                drawLine(color, Offset(center.x, size.height * .08f), Offset(center.x, size.height * .21f), stroke)
+                drawLine(color, Offset(center.x, size.height * .79f), Offset(center.x, size.height * .92f), stroke)
+            }
+            AppTab.SUBSCRIPTIONS -> {
+                drawCircle(color, radius = size.minDimension * .19f, center = Offset(size.width * .34f, size.height * .42f), style = line)
+                drawCircle(color, radius = size.minDimension * .19f, center = Offset(size.width * .66f, size.height * .58f), style = line)
+                drawLine(color, Offset(size.width * .43f, size.height * .48f), Offset(size.width * .57f, size.height * .52f), stroke)
+            }
+            AppTab.LOGS -> {
+                drawRect(color, topLeft = Offset(size.width * .2f, size.height * .12f), size = size.copy(width = size.width * .6f, height = size.height * .76f), style = line)
+                for (y in listOf(.34f, .5f, .66f)) {
+                    drawLine(color, Offset(size.width * .32f, size.height * y), Offset(size.width * .68f, size.height * y), stroke)
+                }
+            }
+            AppTab.SETTINGS -> {
+                drawCircle(color, radius = size.minDimension * .24f, center = center, style = line)
+                drawCircle(color, radius = size.minDimension * .08f, center = center, style = line)
+                val r1 = size.minDimension * .3f
+                val r2 = size.minDimension * .43f
+                for ((dx, dy) in listOf(0f to -1f, 1f to 0f, 0f to 1f, -1f to 0f)) {
+                    drawLine(color, Offset(center.x + dx * r1, center.y + dy * r1), Offset(center.x + dx * r2, center.y + dy * r2), stroke)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -271,18 +337,31 @@ private fun LustApp(
                 AppTab.LOGS -> LogsScreen(logEntries, onClear = AppLog::clear, onExport = onExportLogs)
                 AppTab.SETTINGS -> SettingsScreen(vpnSettings, onSaveVpnSettings)
             }
-            if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f)), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Accent)
+            if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Accent, strokeWidth = 3.dp)
             }
         }
-        NavigationBar(containerColor = SurfaceColor) {
-            AppTab.entries.forEach { item ->
-                NavigationBarItem(
-                    selected = tab == item,
-                    onClick = { tab = item },
-                    icon = { Text(item.glyph, fontSize = 20.sp) },
-                    label = { Text(item.title, fontSize = 11.sp) },
-                )
+        Surface(
+            color = SurfaceColor,
+            shadowElevation = 12.dp,
+            modifier = Modifier.navigationBarsPadding(),
+        ) {
+            NavigationBar(containerColor = SurfaceColor, tonalElevation = 0.dp) {
+                AppTab.entries.forEach { item ->
+                    NavigationBarItem(
+                        selected = tab == item,
+                        onClick = { tab = item },
+                        icon = { AppTabIcon(item, tab == item) },
+                        label = { Text(item.title, fontSize = 10.sp, maxLines = 1) },
+                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                            selectedIconColor = Accent,
+                            selectedTextColor = ContentPrimary,
+                            indicatorColor = AccentSoft,
+                            unselectedIconColor = Muted,
+                            unselectedTextColor = Muted,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -308,35 +387,110 @@ private fun HomeScreen(
 ) {
     val connected = state is VpnSessionState.Connected
     val busy = state is VpnSessionState.Connecting || state is VpnSessionState.Disconnecting
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val stateColor = when {
+        connected -> Success
+        busy -> Warning
+        state is VpnSessionState.Error -> Danger
+        else -> Muted
+    }
+    val engineLabel = when (state) {
+        is VpnSessionState.Connecting -> engineName(state.engine)
+        is VpnSessionState.Connected -> engineName(state.engine)
+        is VpnSessionState.Disconnecting -> engineName(state.engine)
+        is VpnSessionState.Error -> state.engine?.let(::engineName) ?: "—"
+        VpnSessionState.Disconnected -> "Готово"
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         item {
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("LUST", color = Accent, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 5.sp)
+                Column {
+                    Text("LUST", color = ContentPrimary, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
+                    Text("PRIVATE NETWORK", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                }
                 Spacer(Modifier.weight(1f))
-                StatusDot(connected, busy)
-                Text(stateLabel(state), color = if (connected) Success else Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
-            }
-        }
-        item {
-            Box(Modifier.fillMaxWidth().height(252.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Ω", fontSize = 112.sp, fontWeight = FontWeight.ExtraLight, color = if (connected) Success else Accent)
-                    Text(if (connected) "ЗАЩИЩЕНО" else "НЕ ПОДКЛЮЧЕНО", fontSize = 12.sp, letterSpacing = 3.sp, color = if (connected) Success else Muted)
+                Surface(color = stateColor.copy(alpha = .12f), shape = RoundedCornerShape(50)) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        StatusDot(connected, busy, state is VpnSessionState.Error)
+                        Spacer(Modifier.width(7.dp))
+                        Text(stateLabel(state), color = stateColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { navigate(AppTab.SERVERS) },
-                colors = CardDefaults.cardColors(containerColor = SurfaceRaised), shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                border = BorderStroke(1.dp, if (connected) Success.copy(alpha = .45f) else Outline),
+                shape = RoundedCornerShape(28.dp),
             ) {
-                Column(Modifier.padding(18.dp)) {
-                    Text("ВЫБРАННЫЙ СЕРВЕР", color = Muted, fontSize = 10.sp, letterSpacing = 1.5.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text(selected?.name ?: "Сервер не выбран", fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (selected != null) Text("${selected.protocol.uppercase()}  •  ${selected.address}:${selected.port}", color = Muted, fontSize = 12.sp)
-                    else Text("Добавь подписку, чтобы получить серверы", color = Muted, fontSize = 12.sp)
+                Column(Modifier.padding(22.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(58.dp).background(if (connected) Success.copy(alpha = .14f) else AccentSoft, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("Ω", color = if (connected) Success else Accent, fontSize = 32.sp, fontWeight = FontWeight.Light)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                when {
+                                    connected -> "Соединение защищено"
+                                    busy -> stateLabel(state)
+                                    state is VpnSessionState.Error -> "Не удалось подключиться"
+                                    else -> "Готов к подключению"
+                                },
+                                color = ContentPrimary,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                if (connected) "Трафик проходит через защищённый туннель" else "Выбери сервер и запусти VPN",
+                                color = Muted,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(22.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatusMetric("ЯДРО", engineLabel, Modifier.weight(1f))
+                        StatusMetric("СЕРВЕРОВ", serverCount.toString(), Modifier.weight(1f))
+                        StatusMetric("ПОДПИСОК", subscriptionCount.toString(), Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        item {
+            SectionLabel("МАРШРУТ")
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { navigate(AppTab.SERVERS) },
+                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                border = BorderStroke(1.dp, Outline),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(42.dp).background(AccentSoft, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                        Text(selected?.protocol?.take(1)?.uppercase() ?: "+", color = Accent, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(selected?.name ?: "Сервер не выбран", color = ContentPrimary, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            selected?.let { "${it.protocol.uppercase()}  ·  ${it.address}:${it.port}" } ?: "Открой список серверов",
+                            color = Muted,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text("›", color = Accent, fontSize = 28.sp)
                 }
             }
         }
@@ -344,20 +498,35 @@ private fun HomeScreen(
             Button(
                 onClick = { if (connected || busy) onDisconnect() else selected?.let { onConnect(it.config) } },
                 enabled = selected != null || connected || busy,
-                modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = if (connected) Danger else Accent, contentColor = Background),
-            ) { Text(if (connected || busy) "ОТКЛЮЧИТЬ" else "ПОДКЛЮЧИТЬ", fontWeight = FontWeight.Bold, letterSpacing = 1.sp) }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("СЕРВЕРЫ", serverCount.toString(), Modifier.weight(1f)) { navigate(AppTab.SERVERS) }
-                MetricCard("ПОДПИСКИ", subscriptionCount.toString(), Modifier.weight(1f)) { navigate(AppTab.SUBSCRIPTIONS) }
+                modifier = Modifier.fillMaxWidth().height(58.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (connected || busy) SurfaceStrong else Accent,
+                    contentColor = if (connected || busy) Danger else Background,
+                    disabledContainerColor = SurfaceRaised,
+                    disabledContentColor = Muted,
+                ),
+                border = if (connected || busy) BorderStroke(1.dp, Danger.copy(alpha = .4f)) else null,
+            ) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Warning, strokeWidth = 2.dp)
+                if (busy) Spacer(Modifier.width(10.dp))
+                Text(
+                    when {
+                        busy -> "ОТМЕНИТЬ"
+                        connected -> "ОТКЛЮЧИТЬ"
+                        else -> "ПОДКЛЮЧИТЬ"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
             }
         }
         if (state is VpnSessionState.Error) item {
-            Text(state.message, color = Danger, fontSize = 13.sp)
+            Surface(color = Danger.copy(alpha = .1f), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Danger.copy(alpha = .3f))) {
+                Text(state.message, color = Danger, fontSize = 13.sp, modifier = Modifier.padding(14.dp))
+            }
         }
-        item { Spacer(Modifier.height(20.dp)) }
+        item { Spacer(Modifier.height(16.dp)) }
     }
 }
 
@@ -373,9 +542,9 @@ private fun ServersScreen(
 ) {
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ScreenTitle("Серверы", "${servers.size} доступно · TCP endpoint", Modifier.weight(1f))
+            ScreenTitle("Серверы", serverCountLabel(servers.size), Modifier.weight(1f))
             TextButton(onClick = onTestLatency, enabled = servers.isNotEmpty() && !latencyTesting) {
-                Text(if (latencyTesting) "ПРОВЕРКА…" else "ПРОВЕРИТЬ", color = Accent)
+                Text(if (latencyTesting) "ПРОВЕРКА…" else "ПРОВЕРИТЬ ВСЕ", color = Accent)
             }
         }
         Spacer(Modifier.height(18.dp))
@@ -385,11 +554,12 @@ private fun ServersScreen(
                 val active = server.id == selected?.id
                 Card(
                     Modifier.fillMaxWidth().clickable { onSelect(server) },
-                    colors = CardDefaults.cardColors(containerColor = if (active) Color(0xFF202831) else SurfaceColor),
-                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (active) AccentSoft else SurfaceColor),
+                    border = BorderStroke(1.dp, if (active) Accent.copy(alpha = .55f) else Outline),
+                    shape = RoundedCornerShape(18.dp),
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(38.dp).background(if (active) Success else SurfaceRaised, CircleShape), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(42.dp).background(if (active) Accent else SurfaceRaised, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
                             Text(server.protocol.take(1).uppercase(), color = if (active) Background else Accent, fontWeight = FontWeight.Bold)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -398,7 +568,7 @@ private fun ServersScreen(
                         }
                         val latency = latencyResults[server.id]
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(if (active) "ВЫБРАН" else server.protocol.uppercase(), color = if (active) Success else Muted, fontSize = 10.sp)
+                            Text(if (active) "ВЫБРАН" else server.protocol.uppercase(), color = if (active) Accent else Muted, fontSize = 10.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
                             if (latency != null) {
                                 Text(
                                     latency.latencyMillis?.let { "$it мс" } ?: "НЕДОСТУПЕН",
@@ -429,7 +599,12 @@ private fun SubscriptionsScreen(
         if (subscriptions.isEmpty()) EmptyState("Подписок пока нет", "Вставь URL подписки. Lust загрузит и разберёт серверы автоматически.", "+ ДОБАВИТЬ", { showAdd = true })
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(subscriptions, key = { it.id }) { subscription ->
-                Card(colors = CardDefaults.cardColors(containerColor = SurfaceColor), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                    border = BorderStroke(1.dp, Outline),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(subscription.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                         Text(subscription.url, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -534,7 +709,8 @@ private fun LogEntryCard(entry: LogEntry) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Outline),
+        shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -557,6 +733,7 @@ private fun SettingsScreen(settings: VpnSettings, onSave: (VpnSettings) -> Unit)
     var mtu by remember(settings) { mutableStateOf(settings.mtu.toString()) }
     var dnsServer by remember(settings) { mutableStateOf(settings.dnsServer) }
     var ipv6Enabled by remember(settings) { mutableStateOf(settings.ipv6Enabled) }
+    var engine by remember(settings) { mutableStateOf(settings.engine) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -565,13 +742,22 @@ private fun SettingsScreen(settings: VpnSettings, onSave: (VpnSettings) -> Unit)
     ) {
         item { ScreenTitle("Настройки", "Реальные параметры Android VPN и HEV") }
         item { SettingsSectionTitle("ЯДРО") }
-        item { SettingsCard("Xray-core", "Активно · AndroidLibXrayLite", "XRAY") }
+        item {
+            SettingsCard(
+                "Xray-core",
+                "AndroidLibXrayLite",
+                if (engine == EngineKind.XRAY) "АКТИВНО" else "ВЫБРАТЬ",
+                selected = engine == EngineKind.XRAY,
+                onClick = { engine = EngineKind.XRAY },
+            )
+        }
         item {
             SettingsCard(
                 "sing-box",
-                "Бинарное ядро пока не подключено — переключатель не подменён заглушкой",
-                "НЕДОСТУПНО",
-                enabled = false,
+                "Изолированное ядро · SOCKS 127.0.0.1:10808",
+                if (engine == EngineKind.SING_BOX) "АКТИВНО" else "ВЫБРАТЬ",
+                selected = engine == EngineKind.SING_BOX,
+                onClick = { engine = EngineKind.SING_BOX },
             )
         }
         item { SettingsSectionTitle("VPN-ИНТЕРФЕЙС") }
@@ -612,7 +798,7 @@ private fun SettingsScreen(settings: VpnSettings, onSave: (VpnSettings) -> Unit)
         item {
             Button(
                 onClick = {
-                    runCatching { VpnSettings.validate(mtu, dnsServer, ipv6Enabled) }
+                    runCatching { VpnSettings.validate(mtu, dnsServer, ipv6Enabled, engine) }
                         .onSuccess { validationError = null; onSave(it) }
                         .onFailure { validationError = it.message ?: "Некорректные настройки" }
                 },
@@ -621,58 +807,114 @@ private fun SettingsScreen(settings: VpnSettings, onSave: (VpnSettings) -> Unit)
             ) { Text("СОХРАНИТЬ") }
         }
         item { SettingsSectionTitle("ТРАНСПОРТ И ДИАГНОСТИКА") }
-        item { SettingsCard("HEV tun2socks", "Android TUN → HEV → SOCKS 127.0.0.1:10808 → Xray", "ВКЛЮЧЕНО") }
+        item { SettingsCard("HEV tun2socks", "Android TUN → HEV → SOCKS 127.0.0.1:10808 → ${if (engine == EngineKind.XRAY) "Xray" else "sing-box"}", "ВКЛЮЧЕНО") }
         item { SettingsCard("Постоянный журнал", "Core/service stack trace, поиск, фильтры, экспорт, ротация 2 МБ", "ВКЛЮЧЕНО") }
-        item { SettingsCard("Версия приложения", "Alpha · настройки применяются при следующем подключении", "0.1.1-alpha") }
+        item { SettingsCard("Версия приложения", "Alpha · настройки применяются при следующем подключении", BuildConfig.VERSION_NAME) }
     }
 }
 
 @Composable
 private fun SettingsSectionTitle(text: String) {
-    Text(text, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+    SectionLabel(text)
 }
 
 @Composable
-private fun SettingsCard(title: String, subtitle: String, value: String, enabled: Boolean = true) {
+private fun SettingsCard(
+    title: String,
+    subtitle: String,
+    value: String,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (enabled) SurfaceColor else SurfaceColor.copy(alpha = .55f)),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                !enabled -> SurfaceColor.copy(alpha = .55f)
+                selected -> AccentSoft
+                else -> SurfaceColor
+            },
+        ),
+        border = BorderStroke(1.dp, if (selected) Accent.copy(alpha = .6f) else Outline),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().then(if (enabled && onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold, color = if (enabled) Accent else Muted)
+                Text(title, fontWeight = FontWeight.SemiBold, color = if (enabled) ContentPrimary else Muted)
+                Spacer(Modifier.height(3.dp))
                 Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
             }
-            Text(value, color = if (enabled) Success else Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(12.dp))
+            Text(value, color = if (selected) Accent else if (enabled) Success else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
-@Composable private fun ScreenTitle(title: String, subtitle: String, modifier: Modifier = Modifier) = Column(modifier) {
-    Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+@Composable
+private fun ScreenTitle(title: String, subtitle: String, modifier: Modifier = Modifier) = Column(modifier) {
+    Text(title, color = ContentPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(2.dp))
     Text(subtitle, color = Muted, fontSize = 12.sp)
 }
 
-@Composable private fun EmptyState(title: String, text: String, button: String, onClick: () -> Unit) {
+@Composable
+private fun EmptyState(title: String, text: String, button: String, onClick: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Text("Ω", fontSize = 64.sp, color = Muted)
-            Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            Text(text, color = Muted, modifier = Modifier.padding(vertical = 10.dp), lineHeight = 20.sp)
-            Button(onClick = onClick) { Text(button) }
+        Surface(color = SurfaceColor, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Outline)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(28.dp)) {
+                Box(Modifier.size(54.dp).background(AccentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("Ω", fontSize = 30.sp, color = Accent, fontWeight = FontWeight.Light)
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(title, color = ContentPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(text, color = Muted, modifier = Modifier.padding(vertical = 10.dp), lineHeight = 20.sp)
+                Button(onClick = onClick, shape = RoundedCornerShape(14.dp)) { Text(button, fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }
 
-@Composable private fun StatusDot(connected: Boolean, busy: Boolean) {
-    Box(Modifier.size(8.dp).background(if (connected) Success else if (busy) Color.Yellow else Muted, CircleShape))
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
 }
 
-@Composable private fun MetricCard(label: String, value: String, modifier: Modifier, onClick: () -> Unit) {
-    Card(modifier.clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = SurfaceColor), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp)) { Text(label, color = Muted, fontSize = 10.sp); Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+@Composable
+private fun StatusDot(connected: Boolean, busy: Boolean, failed: Boolean = false) {
+    val color = when {
+        connected -> Success
+        busy -> Warning
+        failed -> Danger
+        else -> Muted
     }
+    Box(Modifier.size(8.dp).background(color, CircleShape))
+}
+
+@Composable
+private fun StatusMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = SurfaceColor, shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
+            Text(label, color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = .8.sp)
+            Spacer(Modifier.height(3.dp))
+            Text(value, color = ContentPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+private fun serverCountLabel(count: Int): String {
+    val form = when {
+        count % 100 in 11..14 -> "серверов"
+        count % 10 == 1 -> "сервер"
+        count % 10 in 2..4 -> "сервера"
+        else -> "серверов"
+    }
+    return "$count $form · проверка TCP-соединения"
+}
+
+private fun engineName(engine: EngineKind): String = when (engine) {
+    EngineKind.XRAY -> "Xray"
+    EngineKind.SING_BOX -> "sing-box"
 }
 
 private fun stateLabel(state: VpnSessionState): String = when (state) {

@@ -11,14 +11,20 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.1.2-alpha"
+        versionCode = 4
+        versionName = "0.1.3-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        jniLibs.useLegacyPackaging = true
+    }
 }
 
 dependencies {

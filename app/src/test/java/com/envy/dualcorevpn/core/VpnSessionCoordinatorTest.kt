@@ -16,6 +16,19 @@ class VpnSessionCoordinatorTest {
         coordinator.start("{}")
         coordinator.stop()
 
+        assertEquals(listOf("validate", "engine.start", "transport.start", "transport.stop", "engine.stop"), calls)
+    }
+
+    @Test fun `transport first policy preserves xray startup order`() = runTest {
+        val calls = mutableListOf<String>()
+        val coordinator = VpnSessionCoordinator(
+            engine = FakeEngine(calls, startupOrder = EngineStartupOrder.TRANSPORT_FIRST),
+            transport = FakeTransport(calls),
+        )
+
+        coordinator.start("{}")
+        coordinator.stop()
+
         assertEquals(listOf("validate", "transport.start", "engine.start", "engine.stop", "transport.stop"), calls)
     }
 
@@ -41,12 +54,13 @@ class VpnSessionCoordinatorTest {
 
         assertFailsWith<IllegalStateException> { coordinator.start("{}") }
 
-        assertEquals(listOf("validate", "transport.start"), calls)
+        assertEquals(listOf("validate", "engine.start", "transport.start", "engine.stop"), calls)
     }
 
     private class FakeEngine(
         private val calls: MutableList<String>,
-        private val result: ValidationResult = ValidationResult.Valid
+        private val result: ValidationResult = ValidationResult.Valid,
+        override val startupOrder: EngineStartupOrder = EngineStartupOrder.ENGINE_FIRST,
     ) : CoreEngine {
         override val kind = EngineKind.XRAY
         override suspend fun validate(config: String): ValidationResult { calls += "validate"; return result }

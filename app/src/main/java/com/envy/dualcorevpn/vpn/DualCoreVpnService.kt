@@ -11,7 +11,9 @@ import androidx.core.app.NotificationCompat
 import com.envy.dualcorevpn.MainActivity
 import com.envy.dualcorevpn.R
 import com.envy.dualcorevpn.core.EngineKind
+import com.envy.dualcorevpn.core.NativeSingBoxGateway
 import com.envy.dualcorevpn.core.NativeXrayGateway
+import com.envy.dualcorevpn.core.SingBoxEngine
 import com.envy.dualcorevpn.core.VpnEvent
 import com.envy.dualcorevpn.core.VpnSessionCoordinator
 import com.envy.dualcorevpn.core.VpnSessionState
@@ -60,15 +62,18 @@ class DualCoreVpnService : VpnService() {
 
     private fun connect(config: String?) {
         if (coordinator != null) return
-        stateMachine.dispatch(VpnEvent.ConnectRequested(EngineKind.XRAY))
+        val engineKind = VpnSettingsRepository(this).load().engine
+        stateMachine.dispatch(VpnEvent.ConnectRequested(engineKind))
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_connecting)))
         operation?.cancel()
         operation = serviceScope.launch {
             try {
-                initializationFailure?.let { throw IllegalStateException("Xray runtime initialization failed", it) }
-                require(!config.isNullOrBlank()) { "Xray configuration is required" }
-                AppLog.info("VPN", "Starting Xray + HEV session")
-                val session = createCoordinator()
+                if (engineKind == EngineKind.XRAY) {
+                    initializationFailure?.let { throw IllegalStateException("Xray runtime initialization failed", it) }
+                }
+                require(!config.isNullOrBlank()) { "Proxy configuration is required" }
+                AppLog.info("VPN", "Starting $engineKind + HEV session")
+                val session = createCoordinator(engineKind)
                 coordinator = session
                 session.start(config)
                 stateMachine.dispatch(VpnEvent.Connected(System.currentTimeMillis()))
@@ -99,12 +104,19 @@ class DualCoreVpnService : VpnService() {
         }
     }
 
-    private fun createCoordinator(): VpnSessionCoordinator {
+    private fun createCoordinator(engineKind: EngineKind): VpnSessionCoordinator {
         val settings = VpnSettingsRepository(this).load()
-        val engine = XrayEngine(
-            gateway = NativeXrayGateway(),
-            validator = XrayConfigValidator,
-        )
+        val engine = when (engineKind) {
+            EngineKind.XRAY -> XrayEngine(
+                gateway = NativeXrayGateway(),
+                validator = XrayConfigValidator,
+            )
+            EngineKind.SING_BOX -> SingBoxEngine(
+                NativeSingBoxGateway(this) { exitCode ->
+                    handleRuntimeFailure(EngineKind.SING_BOX, "sing-box stopped unexpectedly (exit=$exitCode)")
+                },
+            )
+        }
         val tunTransport = AndroidTunSessionTransport(
             establishTun = {
                 Builder()
@@ -128,11 +140,27 @@ class DualCoreVpnService : VpnService() {
             hevConfig = HevConfig(mtu = settings.mtu, ipv6Enabled = settings.ipv6Enabled),
             onFailure = { failure ->
                 AppLog.error("HEV", "Native tunnel failed", failure)
-                VpnSessionStore.update(VpnSessionState.Error(EngineKind.XRAY, failure.message ?: "HEV tunnel failed"))
-                serviceScope.launch { runCatching { coordinator?.stop() } }
+                handleRuntimeFailure(engineKind, failure.message ?: "HEV tunnel failed")
             },
         )
         return VpnSessionCoordinator(engine, tunTransport)
+    }
+
+    private fun handleRuntimeFailure(engine: EngineKind, message: String) {
+        serviceScope.launch {
+            val active = when (val state = stateMachine.state) {
+                is VpnSessionState.Connecting -> state.engine == engine
+                is VpnSessionState.Connected -> state.engine == engine
+                else -> false
+            }
+            if (!active) return@launch
+            AppLog.error("VPN", message)
+            stateMachine.dispatch(VpnEvent.Failed(message))
+            runCatching { stopSession() }
+                .onFailure { AppLog.error("VPN", "Failed to stop broken session", it) }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private suspend fun stopSession() {
@@ -148,7 +176,9 @@ class DualCoreVpnService : VpnService() {
             operation?.cancelAndJoin()
             stopSession()
         }
-        stateMachine.dispatch(VpnEvent.Terminated)
+        if (stateMachine.state !is VpnSessionState.Error) {
+            stateMachine.dispatch(VpnEvent.Terminated)
+        }
         serviceScope.cancel()
         super.onDestroy()
     }

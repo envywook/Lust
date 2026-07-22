@@ -5,7 +5,17 @@ ADB="${ADB:-adb}"
 PACKAGE="com.envy.dualcorevpn"
 APK="${1:-app/build/outputs/apk/debug/app-debug.apk}"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+
+stop_runtime() {
+  "$ADB" shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
+  "$ADB" shell 'pids=$(pidof libsingbox.so); [ -z "$pids" ] || kill $pids' >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  stop_runtime
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 fail() {
   printf 'VPN_SMOKE_FAIL: %s\n' "$*" >&2
@@ -78,6 +88,7 @@ wait_for_no_tun() {
 
 "$ADB" get-state >/dev/null || fail "ADB device unavailable"
 [[ -f "$APK" ]] || fail "APK not found: $APK"
+stop_runtime
 "$ADB" install -r "$APK" >/dev/null
 "$ADB" logcat -c
 "$ADB" shell am force-stop "$PACKAGE"
@@ -86,28 +97,42 @@ wait_for_text "ПОДКЛЮЧИТЬ"
 
 for cycle in 1 2; do
   click_text "ПОДКЛЮЧИТЬ"
-  wait_for_text "ЗАЩИЩЕНО"
+  wait_for_text "Соединение защищено"
   wait_for_vpn
 
+  if [[ "${EXPECT_ENGINE:-XRAY}" == "SING_BOX" ]]; then
+    "$ADB" shell pidof libsingbox.so >/dev/null || fail "sing-box subprocess is not running in cycle $cycle"
+    "$ADB" shell run-as "$PACKAGE" grep -q 'READY' files/logs/lust.log ||
+      fail "sing-box READY evidence missing in cycle $cycle"
+  fi
+
   # ICMP is not supported by the SOCKS transport. Verify TCP and DNS instead.
-  "$ADB" shell 'printf x | nc -w 8 1.1.1.1 443' >/dev/null || fail "TCP traffic failed in cycle $cycle"
-  dns_ok=false
-  for _ in $(seq 1 5); do
-    dns_output="$("$ADB" shell 'ping -c 1 -W 1 example.com' 2>&1 || true)"
-    if grep -Eq '^PING .* \([0-9a-fA-F:.]+\)' <<<"$dns_output"; then
-      dns_ok=true
-      break
-    fi
-    sleep 1
-  done
-  $dns_ok || fail "DNS resolution failed in cycle $cycle"
+  "$ADB" shell 'nc -w 8 1.1.1.1 443 </dev/null' >/dev/null || fail "TCP traffic failed in cycle $cycle"
+  if [[ "${CHECK_DNS:-1}" == "1" ]]; then
+    dns_ok=false
+    for _ in $(seq 1 5); do
+      dns_output="$("$ADB" shell 'ping -c 1 -W 1 example.com' 2>&1 || true)"
+      if grep -Eq '^PING .* \([0-9a-fA-F:.]+\)' <<<"$dns_output"; then
+        dns_ok=true
+        break
+      fi
+      sleep 1
+    done
+    $dns_ok || fail "DNS resolution failed in cycle $cycle"
+  fi
 
   click_text "ОТКЛЮЧИТЬ"
-  wait_for_text "ПОДКЛЮЧИТЬ"
   wait_for_no_tun
+  "$ADB" shell monkey -p "$PACKAGE" 1 >/dev/null
+  wait_for_text "ПОДКЛЮЧИТЬ"
+  if [[ "${EXPECT_ENGINE:-XRAY}" == "SING_BOX" ]] && "$ADB" shell pidof libsingbox.so >/dev/null 2>&1; then
+    fail "sing-box subprocess remained after disconnect in cycle $cycle"
+  fi
 done
 
 fatal_count="$($ADB logcat -d | grep -Ec 'FATAL EXCEPTION|Fatal signal|JNI DETECTED ERROR' || true)"
 [[ "$fatal_count" == "0" ]] || fail "fatal Android/JNI events: $fatal_count"
 
-printf 'VPN_SMOKE_PASS cycles=2 tcp=ok dns=ok disconnect=ok fatal=0\n'
+dns_result="ok"
+[[ "${CHECK_DNS:-1}" == "1" ]] || dns_result="skipped"
+printf 'VPN_SMOKE_PASS cycles=2 tcp=ok dns=%s disconnect=ok fatal=0\n' "$dns_result"

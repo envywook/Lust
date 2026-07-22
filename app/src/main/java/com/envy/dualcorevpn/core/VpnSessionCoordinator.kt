@@ -22,6 +22,24 @@ class VpnSessionCoordinator(
             (validation as ValidationResult.Invalid).reason
         }
 
+        when (engine.startupOrder) {
+            EngineStartupOrder.ENGINE_FIRST -> startEngineFirst(config)
+            EngineStartupOrder.TRANSPORT_FIRST -> startTransportFirst(config)
+        }
+        active = true
+    }
+
+    private suspend fun startEngineFirst(config: String) {
+        engine.start(config, -1)
+        try {
+            transport.start()
+        } catch (failure: Throwable) {
+            runCatching { engine.stop() }.onFailure(failure::addSuppressed)
+            throw failure
+        }
+    }
+
+    private suspend fun startTransportFirst(config: String) {
         val tunFileDescriptor = transport.start()
         try {
             engine.start(config, tunFileDescriptor)
@@ -29,22 +47,29 @@ class VpnSessionCoordinator(
             runCatching { transport.stop() }.onFailure(failure::addSuppressed)
             throw failure
         }
-        active = true
     }
 
     suspend fun stop() = mutex.withLock {
         if (!active) return@withLock
+        val firstStop: suspend () -> Unit
+        val secondStop: suspend () -> Unit
+        if (engine.startupOrder == EngineStartupOrder.ENGINE_FIRST) {
+            firstStop = { transport.stop() }
+            secondStop = engine::stop
+        } else {
+            firstStop = engine::stop
+            secondStop = { transport.stop() }
+        }
         var failure: Throwable? = null
         try {
-            engine.stop()
-        } catch (engineFailure: Throwable) {
-            failure = engineFailure
+            firstStop()
+        } catch (firstFailure: Throwable) {
+            failure = firstFailure
         }
         try {
-            transport.stop()
-        } catch (transportFailure: Throwable) {
-            if (failure == null) failure = transportFailure
-            else failure.addSuppressed(transportFailure)
+            secondStop()
+        } catch (secondFailure: Throwable) {
+            if (failure == null) failure = secondFailure else failure.addSuppressed(secondFailure)
         }
         active = false
         failure?.let { throw it }

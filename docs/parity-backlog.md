@@ -15,7 +15,14 @@ Parity means comparable user capability, not copied UI. v2RayTun is the primary 
 - [ ] Observable server latency testing with timeout/error state, bounded concurrency, cancellation, and persisted last result.
 - [ ] Profile/subscription/settings backup and restore with schema versioning, preview, conflict policy, and atomic commit.
 - [ ] Deterministic emulator E2E: direct local target at `10.0.2.2`, VPN app-op consent, connect/traffic/DNS/disconnect/reconnect/revoke/startup-cancel assertions.
-- [ ] Honest runtime selection: expose a core only after its binary/library, config generation, lifecycle, traffic, and failure handling pass acceptance.
+- [x] Honest runtime selection: Xray and sing-box are exposed only with real config generation, lifecycle, traffic, and failure handling acceptance.
+
+## Implemented core scope
+
+- Xray keeps its existing AndroidLibXrayLite runtime and starts after the Android TUN/HEV transport.
+- sing-box `1.13.14` runs as the official Android command executable for the installed ABI, with a SOCKS inbound on `127.0.0.1:10808`; HEV starts only after the SOCKS listener is ready.
+- sing-box profile conversion currently covers VMess, VLESS, Trojan, and Shadowsocks with TCP, WebSocket, or gRPC transport plus TLS/Reality fields produced by the subscription parser. Unsupported Xray protocols or transports fail before VPN establishment; there is no silent Xray fallback.
+- Universal debug APKs include all four Android ABIs and are large. Release packaging should publish ABI-specific APKs.
 
 ## P1 — major parity and operations
 
