@@ -55,7 +55,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/Lust-${GITHUB_REF_NAME}-debug.apk
-          sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
+          (cd dist && sha256sum *.apk | tee SHA256SUMS.txt)
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
