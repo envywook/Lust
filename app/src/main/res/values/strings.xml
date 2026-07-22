@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lust</string>
+    <string name="vpn_channel_name">VPN connection</string>
+    <string name="vpn_channel_description">VPN connection status</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnecting">Disconnecting…</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="notification_stop">Stop</string>
+</resources>
