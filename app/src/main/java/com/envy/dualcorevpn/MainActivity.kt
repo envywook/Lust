@@ -60,6 +60,8 @@ import com.envy.dualcorevpn.logging.AppLog
 import com.envy.dualcorevpn.logging.LogEntry
 import com.envy.dualcorevpn.logging.LogFilter
 import com.envy.dualcorevpn.logging.LogLevel
+import com.envy.dualcorevpn.server.ServerLatencyResult
+import com.envy.dualcorevpn.server.ServerLatencyTester
 import com.envy.dualcorevpn.settings.VpnSettings
 import com.envy.dualcorevpn.settings.VpnSettingsRepository
 import com.envy.dualcorevpn.subscription.ServerProfile
@@ -87,6 +89,8 @@ class MainActivity : ComponentActivity() {
     private var reloadUi by mutableStateOf(0)
     private var loading by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
+    private var latencyResults by mutableStateOf<Map<String, ServerLatencyResult>>(emptyMap())
+    private var latencyTesting by mutableStateOf(false)
 
     private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         permissionResult?.invoke(result.resultCode == RESULT_OK)
@@ -121,6 +125,9 @@ class MainActivity : ComponentActivity() {
                         vpnSettings = settings
                         message = "VPN-настройки сохранены; применятся при следующем подключении"
                     },
+                    latencyResults = latencyResults,
+                    latencyTesting = latencyTesting,
+                    onTestLatency = ::testServerLatency,
                 )
             }
         }
@@ -146,6 +153,15 @@ class MainActivity : ComponentActivity() {
                 }
                 .onFailure { message = it.message ?: "Не удалось обновить подписку" }
             loading = false
+        }
+    }
+
+    private fun testServerLatency() {
+        if (latencyTesting) return
+        lifecycleScope.launch {
+            latencyTesting = true
+            latencyResults = ServerLatencyTester().test(repository.servers())
+            latencyTesting = false
         }
     }
 
@@ -234,6 +250,9 @@ private fun LustApp(
     onExportLogs: () -> Unit,
     vpnSettings: VpnSettings,
     onSaveVpnSettings: (VpnSettings) -> Unit,
+    latencyResults: Map<String, ServerLatencyResult>,
+    latencyTesting: Boolean,
+    onTestLatency: () -> Unit,
 ) {
     revision.hashCode()
     val vpnState by VpnSessionStore.state.collectAsState()
@@ -247,7 +266,7 @@ private fun LustApp(
         Box(Modifier.weight(1f)) {
             when (tab) {
                 AppTab.HOME -> HomeScreen(vpnState, selected, servers.size, subscriptions.size, onConnect, onDisconnect) { tab = it }
-                AppTab.SERVERS -> ServersScreen(servers, selected, onSelect) { tab = AppTab.SUBSCRIPTIONS }
+                AppTab.SERVERS -> ServersScreen(servers, selected, onSelect, latencyResults, latencyTesting, onTestLatency) { tab = AppTab.SUBSCRIPTIONS }
                 AppTab.SUBSCRIPTIONS -> SubscriptionsScreen(subscriptions, loading, onAddSubscription, onUpdateSubscription, onRemoveSubscription)
                 AppTab.LOGS -> LogsScreen(logEntries, onClear = AppLog::clear, onExport = onExportLogs)
                 AppTab.SETTINGS -> SettingsScreen(vpnSettings, onSaveVpnSettings)
@@ -343,9 +362,22 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun ServersScreen(servers: List<ServerProfile>, selected: ServerProfile?, onSelect: (ServerProfile) -> Unit, openSubscriptions: () -> Unit) {
+private fun ServersScreen(
+    servers: List<ServerProfile>,
+    selected: ServerProfile?,
+    onSelect: (ServerProfile) -> Unit,
+    latencyResults: Map<String, ServerLatencyResult>,
+    latencyTesting: Boolean,
+    onTestLatency: () -> Unit,
+    openSubscriptions: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().padding(20.dp)) {
-        ScreenTitle("Серверы", "${servers.size} доступно")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ScreenTitle("Серверы", "${servers.size} доступно · TCP endpoint", Modifier.weight(1f))
+            TextButton(onClick = onTestLatency, enabled = servers.isNotEmpty() && !latencyTesting) {
+                Text(if (latencyTesting) "ПРОВЕРКА…" else "ПРОВЕРИТЬ", color = Accent)
+            }
+        }
         Spacer(Modifier.height(18.dp))
         if (servers.isEmpty()) EmptyState("Нет серверов", "Добавь ссылку подписки — серверы появятся здесь.", "ДОБАВИТЬ ПОДПИСКУ", openSubscriptions)
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -364,7 +396,17 @@ private fun ServersScreen(servers: List<ServerProfile>, selected: ServerProfile?
                             Text(server.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                             Text("${server.address}:${server.port}", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text(if (active) "ВЫБРАН" else server.protocol.uppercase(), color = if (active) Success else Muted, fontSize = 10.sp)
+                        val latency = latencyResults[server.id]
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(if (active) "ВЫБРАН" else server.protocol.uppercase(), color = if (active) Success else Muted, fontSize = 10.sp)
+                            if (latency != null) {
+                                Text(
+                                    latency.latencyMillis?.let { "$it мс" } ?: "НЕДОСТУПЕН",
+                                    color = if (latency.latencyMillis != null) Success else Danger,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
                     }
                 }
             }
