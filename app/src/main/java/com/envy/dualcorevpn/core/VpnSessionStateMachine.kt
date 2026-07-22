@@ -5,6 +5,7 @@ sealed interface VpnEvent {
     data class Connected(val startedAtEpochMillis: Long) : VpnEvent
     data object DisconnectRequested : VpnEvent
     data object Disconnected : VpnEvent
+    data object Terminated : VpnEvent
     data class Failed(val message: String) : VpnEvent
 }
 
@@ -16,6 +17,11 @@ class VpnSessionStateMachine(
         private set
 
     fun dispatch(event: VpnEvent): VpnSessionState {
+        if (event == VpnEvent.Terminated) {
+            state = VpnSessionState.Disconnected
+            onStateChanged(state)
+            return state
+        }
         state = when (val current = state) {
             VpnSessionState.Disconnected -> when (event) {
                 is VpnEvent.ConnectRequested -> VpnSessionState.Connecting(event.engine)
@@ -24,6 +30,7 @@ class VpnSessionStateMachine(
 
             is VpnSessionState.Connecting -> when (event) {
                 is VpnEvent.Connected -> VpnSessionState.Connected(current.engine, event.startedAtEpochMillis)
+                VpnEvent.DisconnectRequested -> VpnSessionState.Disconnecting(current.engine)
                 is VpnEvent.Failed -> VpnSessionState.Error(current.engine, event.message)
                 else -> invalid(event)
             }

@@ -37,6 +37,30 @@ class VpnSessionStateMachineTest {
     }
 
     @Test
+    fun `disconnect during startup cancels cleanly`() {
+        val machine = VpnSessionStateMachine()
+
+        machine.dispatch(VpnEvent.ConnectRequested(EngineKind.XRAY))
+
+        assertEquals(VpnSessionState.Disconnecting(EngineKind.XRAY), machine.dispatch(VpnEvent.DisconnectRequested))
+        assertEquals(VpnSessionState.Disconnected, machine.dispatch(VpnEvent.Disconnected))
+    }
+
+    @Test
+    fun `service termination resets every active state`() {
+        val activeStates = listOf(
+            VpnSessionState.Connecting(EngineKind.XRAY),
+            VpnSessionState.Connected(EngineKind.XRAY, 123L),
+            VpnSessionState.Disconnecting(EngineKind.XRAY),
+            VpnSessionState.Error(EngineKind.XRAY, "failed"),
+        )
+
+        activeStates.forEach { initial ->
+            assertEquals(VpnSessionState.Disconnected, VpnSessionStateMachine(initial).dispatch(VpnEvent.Terminated))
+        }
+    }
+
+    @Test
     fun `cannot report connected directly from disconnected`() {
         val machine = VpnSessionStateMachine()
         assertFailsWith<IllegalStateException> { machine.dispatch(VpnEvent.Connected(123L)) }

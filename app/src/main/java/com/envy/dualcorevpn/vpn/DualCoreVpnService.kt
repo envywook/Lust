@@ -21,10 +21,12 @@ import com.envy.dualcorevpn.core.XrayConfigValidator
 import com.envy.dualcorevpn.core.XrayEngine
 import com.envy.dualcorevpn.core.XrayRuntime
 import com.envy.dualcorevpn.logging.AppLog
+import com.envy.dualcorevpn.settings.VpnSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -72,6 +74,9 @@ class DualCoreVpnService : VpnService() {
                 stateMachine.dispatch(VpnEvent.Connected(System.currentTimeMillis()))
                 AppLog.info("VPN", "Session connected")
                 updateNotification(getString(R.string.status_connected))
+            } catch (cancelled: CancellationException) {
+                AppLog.info("VPN", "Session start cancelled")
+                throw cancelled
             } catch (error: Throwable) {
                 AppLog.error("VPN", "Session start failed: ${error.message ?: error.javaClass.simpleName}", error)
                 coordinator = null
@@ -83,7 +88,7 @@ class DualCoreVpnService : VpnService() {
     }
 
     private fun disconnect() {
-        if (coordinator == null) return
+        if (coordinator == null && operation?.isActive != true) return
         stateMachine.dispatch(VpnEvent.DisconnectRequested)
         operation?.cancel()
         operation = serviceScope.launch {
@@ -95,6 +100,7 @@ class DualCoreVpnService : VpnService() {
     }
 
     private fun createCoordinator(): VpnSessionCoordinator {
+        val settings = VpnSettingsRepository(this).load()
         val engine = XrayEngine(
             gateway = NativeXrayGateway(),
             validator = XrayConfigValidator,
@@ -103,18 +109,23 @@ class DualCoreVpnService : VpnService() {
             establishTun = {
                 Builder()
                     .setSession(getString(R.string.app_name))
-                    .setMtu(1500)
+                    .setMtu(settings.mtu)
                     .addAddress("198.18.0.1", 30)
-                    .addAddress("fc00::1", 126)
                     .addRoute("0.0.0.0", 0)
-                    .addRoute("::", 0)
-                    .addDnsServer("1.1.1.1")
+                    .addDnsServer(settings.dnsServer)
                     .addDisallowedApplication(packageName)
+                    .apply {
+                        if (settings.ipv6Enabled) {
+                            addAddress("fc00::1", 126)
+                            addRoute("::", 0)
+                        }
+                    }
                     .establish() ?: error("Android refused to establish the VPN interface")
             },
             writeConfig = { content ->
                 File(filesDir, "hev-socks5-tunnel.yaml").apply { writeText(content) }.absolutePath
             },
+            hevConfig = HevConfig(mtu = settings.mtu, ipv6Enabled = settings.ipv6Enabled),
             onFailure = { failure ->
                 AppLog.error("HEV", "Native tunnel failed", failure)
                 VpnSessionStore.update(VpnSessionState.Error(EngineKind.XRAY, failure.message ?: "HEV tunnel failed"))
@@ -137,8 +148,15 @@ class DualCoreVpnService : VpnService() {
             operation?.cancelAndJoin()
             stopSession()
         }
+        stateMachine.dispatch(VpnEvent.Terminated)
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    override fun onRevoke() {
+        AppLog.warn("VPN", "VPN permission revoked")
+        disconnect()
+        super.onRevoke()
     }
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)

@@ -4,6 +4,7 @@ data class HevConfig(
     val socksHost: String = "127.0.0.1",
     val socksPort: Int = 10808,
     val mtu: Int = 1500,
+    val ipv6Enabled: Boolean = true,
 ) {
     init {
         require(socksHost.isNotBlank()) { "SOCKS host is blank" }
@@ -15,6 +16,7 @@ data class HevConfig(
         tunnel:
           mtu: $mtu
           ipv4: 198.18.0.1
+        ${if (ipv6Enabled) "  ipv6: 'fc00::1'" else ""}
         socks5:
           address: '$socksHost'
           port: $socksPort

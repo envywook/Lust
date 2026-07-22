@@ -35,6 +35,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,12 +51,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ShareCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.envy.dualcorevpn.core.VpnSessionState
 import com.envy.dualcorevpn.core.VpnSessionStore
 import com.envy.dualcorevpn.logging.AppLog
 import com.envy.dualcorevpn.logging.LogEntry
+import com.envy.dualcorevpn.logging.LogFilter
 import com.envy.dualcorevpn.logging.LogLevel
+import com.envy.dualcorevpn.settings.VpnSettings
+import com.envy.dualcorevpn.settings.VpnSettingsRepository
 import com.envy.dualcorevpn.subscription.ServerProfile
 import com.envy.dualcorevpn.subscription.Subscription
 import com.envy.dualcorevpn.subscription.SubscriptionRepository
@@ -74,6 +80,8 @@ private val Danger = Color(0xFFFF707A)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: SubscriptionRepository
+    private lateinit var settingsRepository: VpnSettingsRepository
+    private var vpnSettings by mutableStateOf(VpnSettings())
     private var permissionResult: ((Boolean) -> Unit)? = null
     private var pendingConfig: String? = null
     private var reloadUi by mutableStateOf(0)
@@ -88,6 +96,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = SubscriptionRepository(applicationContext)
+        settingsRepository = VpnSettingsRepository(applicationContext)
+        vpnSettings = settingsRepository.load()
         AppLog.initialize(java.io.File(filesDir, "logs"))
         AppLog.info("UI", "Application opened")
         setContent {
@@ -104,6 +114,13 @@ class MainActivity : ComponentActivity() {
                     onAddSubscription = ::addSubscription,
                     onUpdateSubscription = ::updateSubscription,
                     onRemoveSubscription = { repository.remove(it); reloadUi++ },
+                    onExportLogs = ::exportLogs,
+                    vpnSettings = vpnSettings,
+                    onSaveVpnSettings = { settings ->
+                        settingsRepository.save(settings)
+                        vpnSettings = settings
+                        message = "VPN-настройки сохранены; применятся при следующем подключении"
+                    },
                 )
             }
         }
@@ -127,6 +144,21 @@ class MainActivity : ComponentActivity() {
                 .onFailure { message = it.message ?: "Не удалось обновить подписку" }
             loading = false
         }
+    }
+
+    private fun exportLogs() {
+        val exportDirectory = java.io.File(cacheDir, "exports").apply { mkdirs() }
+        val exportFile = java.io.File(exportDirectory, "lust-diagnostics.log").apply {
+            writeText(AppLog.exportText())
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", exportFile)
+        val intent = ShareCompat.IntentBuilder(this)
+            .setType("text/plain")
+            .setSubject("Lust diagnostics")
+            .setStream(uri)
+            .intent
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(intent, "Экспорт журнала"))
     }
 
     private fun requestConnect(config: String) {
@@ -196,6 +228,9 @@ private fun LustApp(
     onAddSubscription: (String, String) -> Unit,
     onUpdateSubscription: (Subscription) -> Unit,
     onRemoveSubscription: (Subscription) -> Unit,
+    onExportLogs: () -> Unit,
+    vpnSettings: VpnSettings,
+    onSaveVpnSettings: (VpnSettings) -> Unit,
 ) {
     revision.hashCode()
     val vpnState by VpnSessionStore.state.collectAsState()
@@ -211,8 +246,8 @@ private fun LustApp(
                 AppTab.HOME -> HomeScreen(vpnState, selected, servers.size, subscriptions.size, onConnect, onDisconnect) { tab = it }
                 AppTab.SERVERS -> ServersScreen(servers, selected, onSelect) { tab = AppTab.SUBSCRIPTIONS }
                 AppTab.SUBSCRIPTIONS -> SubscriptionsScreen(subscriptions, loading, onAddSubscription, onUpdateSubscription, onRemoveSubscription)
-                AppTab.LOGS -> LogsScreen(logEntries, onClear = AppLog::clear)
-                AppTab.SETTINGS -> SettingsScreen()
+                AppTab.LOGS -> LogsScreen(logEntries, onClear = AppLog::clear, onExport = onExportLogs)
+                AppTab.SETTINGS -> SettingsScreen(vpnSettings, onSaveVpnSettings)
             }
             if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Accent)
@@ -385,16 +420,35 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onAdd: (String, String)
 }
 
 @Composable
-private fun LogsScreen(entries: List<LogEntry>, onClear: () -> Unit) {
+private fun LogsScreen(entries: List<LogEntry>, onClear: () -> Unit, onExport: () -> Unit) {
     var minimumLevel by remember { mutableStateOf(LogLevel.DEBUG) }
+    var query by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf("") }
     val levels = LogLevel.entries
-    val visible = entries.filter { it.level.ordinal >= minimumLevel.ordinal }.asReversed()
+    val visible = LogFilter.apply(entries, minimumLevel, source, query).asReversed()
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ScreenTitle("Журнал", "${entries.size} событий сохранено", Modifier.weight(1f))
-            TextButton(onClick = onClear) { Text("ОЧИСТИТЬ", color = Danger) }
+            ScreenTitle("Журнал", "${visible.size} из ${entries.size} событий", Modifier.weight(1f))
+            TextButton(onClick = onExport, enabled = entries.isNotEmpty()) { Text("ЭКСПОРТ", color = Accent) }
+            TextButton(onClick = onClear, enabled = entries.isNotEmpty()) { Text("ОЧИСТИТЬ", color = Danger) }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Поиск по сообщению") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = source,
+            onValueChange = { source = it },
+            label = { Text("Источник: VPN, Xray, HEV, UI") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             levels.forEach { level ->
                 val selected = minimumLevel == level
@@ -407,9 +461,13 @@ private fun LogsScreen(entries: List<LogEntry>, onClear: () -> Unit) {
                 ) { Text(level.name, color = if (selected) Accent else Muted, fontSize = 11.sp) }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         if (visible.isEmpty()) {
-            EmptyState("Журнал пуст", "События интерфейса, VPN service, Xray и HEV появятся здесь.", "ОБНОВИТЬ") { }
+            EmptyState("События не найдены", "Измени уровень, источник или поисковый запрос.", "СБРОСИТЬ ФИЛЬТРЫ") {
+                minimumLevel = LogLevel.DEBUG
+                query = ""
+                source = ""
+            }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(visible, key = { "${it.timestampMillis}:${it.source}:${it.message.hashCode()}" }) { entry ->
@@ -450,25 +508,77 @@ private fun LogEntryCard(entry: LogEntry) {
 }
 
 @Composable
-private fun SettingsScreen() {
+private fun SettingsScreen(settings: VpnSettings, onSave: (VpnSettings) -> Unit) {
+    var mtu by remember(settings) { mutableStateOf(settings.mtu.toString()) }
+    var dnsServer by remember(settings) { mutableStateOf(settings.dnsServer) }
+    var ipv6Enabled by remember(settings) { mutableStateOf(settings.ipv6Enabled) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { ScreenTitle("Настройки", "Ядра, VPN, DNS, маршрутизация и диагностика") }
+        item { ScreenTitle("Настройки", "Реальные параметры Android VPN и HEV") }
         item { SettingsSectionTitle("ЯДРО") }
+        item { SettingsCard("Xray-core", "Активно · AndroidLibXrayLite", "XRAY") }
         item {
-            SettingsCard("Xray-core", "Активно · AndroidLibXrayLite", "XRAY")
+            SettingsCard(
+                "sing-box",
+                "Бинарное ядро пока не подключено — переключатель не подменён заглушкой",
+                "НЕДОСТУПНО",
+                enabled = false,
+            )
+        }
+        item { SettingsSectionTitle("VPN-ИНТЕРФЕЙС") }
+        item {
+            OutlinedTextField(
+                value = mtu,
+                onValueChange = { mtu = it.filter(Char::isDigit).take(4) },
+                label = { Text("MTU, 576–9000") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         item {
-            SettingsCard("sing-box", "Бинарное ядро пока не подключено — переключатель не подменён заглушкой", "НЕДОСТУПНО", enabled = false)
+            OutlinedTextField(
+                value = dnsServer,
+                onValueChange = { dnsServer = it.take(253) },
+                label = { Text("DNS-сервер") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        item { SettingsSectionTitle("ТРАНСПОРТ") }
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("IPv6", fontWeight = FontWeight.Medium)
+                        Text("Адрес и маршрут IPv6 в Android TUN и HEV", color = Muted, fontSize = 12.sp)
+                    }
+                    Switch(checked = ipv6Enabled, onCheckedChange = { ipv6Enabled = it })
+                }
+            }
+        }
+        validationError?.let { error -> item { Text(error, color = Danger, fontSize = 13.sp) } }
+        item {
+            Button(
+                onClick = {
+                    runCatching { VpnSettings.validate(mtu, dnsServer, ipv6Enabled) }
+                        .onSuccess { validationError = null; onSave(it) }
+                        .onFailure { validationError = it.message ?: "Некорректные настройки" }
+                },
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) { Text("СОХРАНИТЬ") }
+        }
+        item { SettingsSectionTitle("ТРАНСПОРТ И ДИАГНОСТИКА") }
         item { SettingsCard("HEV tun2socks", "Android TUN → HEV → SOCKS 127.0.0.1:10808 → Xray", "ВКЛЮЧЕНО") }
-        item { SettingsCard("MTU", "Размер VPN-интерфейса", "1500") }
-        item { SettingsSectionTitle("ДИАГНОСТИКА") }
-        item { SettingsCard("Постоянный журнал", "Core/service stack trace, ротация 2 МБ", "ВКЛЮЧЕНО") }
-        item { SettingsCard("Версия приложения", "Ранняя тестовая сборка", "0.1.0") }
+        item { SettingsCard("Постоянный журнал", "Core/service stack trace, поиск, фильтры, экспорт, ротация 2 МБ", "ВКЛЮЧЕНО") }
+        item { SettingsCard("Версия приложения", "Alpha · настройки применяются при следующем подключении", "0.1.1-alpha") }
     }
 }
 

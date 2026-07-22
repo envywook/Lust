@@ -19,6 +19,25 @@ data class LogEntry(
     val message: String,
 )
 
+object LogFilter {
+    fun apply(
+        entries: List<LogEntry>,
+        minimumLevel: LogLevel,
+        source: String?,
+        query: String,
+    ): List<LogEntry> {
+        val normalizedSource = source?.trim().orEmpty()
+        val normalizedQuery = query.trim()
+        return entries.filter { entry ->
+            entry.level.ordinal >= minimumLevel.ordinal &&
+                (normalizedSource.isEmpty() || entry.source.equals(normalizedSource, ignoreCase = true)) &&
+                (normalizedQuery.isEmpty() ||
+                    entry.source.contains(normalizedQuery, ignoreCase = true) ||
+                    entry.message.contains(normalizedQuery, ignoreCase = true))
+        }
+    }
+}
+
 /** Process-wide, persistent ring log used by UI, VPN service, and native callbacks. */
 object AppLog {
     private const val TAG = "Lust"
