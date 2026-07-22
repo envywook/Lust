@@ -76,23 +76,26 @@
 
 ## Архитектура
 
-```mermaid
-flowchart LR
-    UI[Jetpack Compose UI] --> Repo[SubscriptionRepository]
-    UI --> Service[DualCoreVpnService]
-    Repo --> Parser[SubscriptionParser]
-    Parser --> Config[Xray JSON]
-    Service --> Coordinator[VpnSessionCoordinator]
-    Coordinator --> Xray[XrayEngine]
-    Coordinator --> Transport[AndroidTunSessionTransport]
-    Transport --> TUN[Android TUN]
-    TUN --> HEV[HEV tun2socks]
-    HEV --> SOCKS[127.0.0.1:10808]
-    SOCKS --> Xray
-    Service --> Log[Persistent AppLog]
-    Xray --> Log
-    Transport --> Log
-    Log --> UI
+```text
+┌───────────────────────────── LUST ──────────────────────────────┐
+│                                                                 │
+│  Jetpack Compose UI                                             │
+│     │                                                           │
+│     ├── SubscriptionRepository → Parser → Xray JSON             │
+│     │                                                           │
+│     └── DualCoreVpnService                                      │
+│             │                                                   │
+│             ▼                                                   │
+│       VpnSessionCoordinator ───────────────→ Persistent AppLog  │
+│             │                                  ▲                │
+│             ├── XrayEngine ────────────────────┤                │
+│             │       ▲                          │                │
+│             └── Android TUN → HEV tun2socks ──┘                │
+│                                   │                             │
+│                                   └──→ SOCKS 127.0.0.1:10808    │
+│                                                │                │
+│                                                └──→ Xray → сеть │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Поток подключения
