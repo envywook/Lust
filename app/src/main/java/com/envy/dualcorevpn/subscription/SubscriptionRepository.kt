@@ -68,33 +68,37 @@ class SubscriptionRepository(context: Context) {
         preferences.edit().putString(KEY_SELECTED, serverId).apply()
     }
 
-    suspend fun addAndUpdate(name: String, url: String): Subscription {
+    suspend fun addAndUpdate(name: String, url: String): SubscriptionUpdateResult {
         require(url.startsWith("https://") || url.startsWith("http://")) {
             "Ссылка подписки должна начинаться с https:// или http://"
         }
-        val current = subscriptions().toMutableList()
+        val current = subscriptions()
         val existing = current.firstOrNull { it.url == url }
         val subscription = (existing ?: Subscription(UUID.randomUUID().toString(), name.ifBlank { hostName(url) }, url))
             .copy(name = name.ifBlank { existing?.name ?: hostName(url) })
-        val profiles = fetch(subscription)
-        require(profiles.isNotEmpty()) { "В подписке не найдено поддерживаемых конфигов" }
-        current.removeAll { it.id == subscription.id }
-        val updated = subscription.copy(updatedAt = System.currentTimeMillis())
-        current += updated
-        saveSubscriptions(current)
-        saveServers(servers().filterNot { it.subscriptionId == subscription.id } + profiles)
-        if (selectedServerId() == null) select(profiles.first().id)
-        return updated
+        val plan = SubscriptionRefreshPlanner.plan(
+            subscriptions = current,
+            servers = servers(),
+            selectedServerId = selectedServerId(),
+            subscription = subscription,
+            report = fetch(subscription),
+            updatedAt = System.currentTimeMillis(),
+        )
+        persist(plan)
+        return plan.result
     }
 
-    suspend fun update(subscription: Subscription) {
-        val profiles = fetch(subscription)
-        require(profiles.isNotEmpty()) { "В подписке не найдено поддерживаемых конфигов" }
-        saveServers(servers().filterNot { it.subscriptionId == subscription.id } + profiles)
-        saveSubscriptions(subscriptions().map {
-            if (it.id == subscription.id) it.copy(updatedAt = System.currentTimeMillis()) else it
-        })
-        if (selectedServerId()?.let { id -> profiles.none { it.id == id } } == true) select(profiles.first().id)
+    suspend fun update(subscription: Subscription): SubscriptionUpdateResult {
+        val plan = SubscriptionRefreshPlanner.plan(
+            subscriptions = subscriptions(),
+            servers = servers(),
+            selectedServerId = selectedServerId(),
+            subscription = subscription,
+            report = fetch(subscription),
+            updatedAt = System.currentTimeMillis(),
+        )
+        persist(plan)
+        return plan.result
     }
 
     fun remove(subscription: Subscription) {
@@ -104,7 +108,7 @@ class SubscriptionRepository(context: Context) {
         if (remaining.none { it.id == selectedServerId() }) select(remaining.firstOrNull()?.id)
     }
 
-    private fun fetch(subscription: Subscription): List<ServerProfile> {
+    private suspend fun fetch(subscription: Subscription): SubscriptionParser.ParseReport {
         val connection = URL(subscription.url).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 20_000
@@ -113,27 +117,44 @@ class SubscriptionRepository(context: Context) {
         return try {
             require(connection.responseCode in 200..299) { "Сервер подписки ответил HTTP ${connection.responseCode}" }
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            SubscriptionParser.parse(subscription.id, body)
+            SubscriptionParser.parseReport(subscription.id, body)
         } finally {
             connection.disconnect()
         }
     }
 
+    private fun persist(plan: SubscriptionRefreshPlan) {
+        val committed = preferences.edit()
+            .putString(KEY_SUBSCRIPTIONS, subscriptionsJson(plan.subscriptions).toString())
+            .putString(KEY_SERVERS, serversJson(plan.servers).toString())
+            .putString(KEY_SELECTED, plan.selectedServerId)
+            .commit()
+        check(committed) { "Не удалось атомарно сохранить обновление подписки" }
+    }
+
     private fun saveSubscriptions(items: List<Subscription>) {
+        preferences.edit().putString(KEY_SUBSCRIPTIONS, subscriptionsJson(items).toString()).apply()
+    }
+
+    private fun subscriptionsJson(items: List<Subscription>): JSONArray {
         val array = JSONArray()
         items.forEach { item -> array.put(JSONObject().apply {
             put("id", item.id); put("name", item.name); put("url", item.url); put("updatedAt", item.updatedAt)
         }) }
-        preferences.edit().putString(KEY_SUBSCRIPTIONS, array.toString()).apply()
+        return array
     }
 
     private fun saveServers(items: List<ServerProfile>) {
+        preferences.edit().putString(KEY_SERVERS, serversJson(items).toString()).apply()
+    }
+
+    private fun serversJson(items: List<ServerProfile>): JSONArray {
         val array = JSONArray()
         items.forEach { item -> array.put(JSONObject().apply {
             put("id", item.id); put("subscriptionId", item.subscriptionId); put("name", item.name)
             put("protocol", item.protocol); put("address", item.address); put("port", item.port); put("config", item.config)
         }) }
-        preferences.edit().putString(KEY_SERVERS, array.toString()).apply()
+        return array
     }
 
     private fun hostName(url: String): String = runCatching { URI(url).host }.getOrNull().orEmpty().ifBlank { "Подписка" }

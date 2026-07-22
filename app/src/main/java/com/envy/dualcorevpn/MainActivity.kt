@@ -126,21 +126,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun addSubscription(name: String, url: String) = runRepositoryAction("Подписка добавлена") {
+    private fun addSubscription(name: String, url: String) = runSubscriptionAction {
         repository.addAndUpdate(name, url)
     }
 
-    private fun updateSubscription(subscription: Subscription) = runRepositoryAction("Подписка обновлена") {
+    private fun updateSubscription(subscription: Subscription) = runSubscriptionAction {
         repository.update(subscription)
     }
 
-    private fun runRepositoryAction(success: String, action: suspend () -> Unit) {
+    private fun runSubscriptionAction(action: suspend () -> com.envy.dualcorevpn.subscription.SubscriptionUpdateResult) {
         if (loading) return
         lifecycleScope.launch {
             loading = true
             message = null
             runCatching { withContext(Dispatchers.IO) { action() } }
-                .onSuccess { message = success; reloadUi++ }
+                .onSuccess { result ->
+                    message = "Импортировано: ${result.importedCount} · пропущено: ${result.unsupportedCount} · ошибок: ${result.invalidCount} · дублей: ${result.duplicateCount}"
+                    reloadUi++
+                }
                 .onFailure { message = it.message ?: "Не удалось обновить подписку" }
             loading = false
         }
