@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="title desc">
+  <title id="title">Lust Android VPN client</title>
+  <desc id="desc">Dark violet neon banner for Lust, an open-source Android VPN client.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08070d"/>
+      <stop offset="0.55" stop-color="#121022"/>
+      <stop offset="1" stop-color="#08070d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#c7a4ff" stop-opacity=".42"/>
+      <stop offset=".55" stop-color="#8f5cff" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#8f5cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#efe6ff"/>
+      <stop offset=".5" stop-color="#c49cff"/>
+      <stop offset="1" stop-color="#8c5cff"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#b99aff" stroke-opacity=".055"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="460" rx="28" fill="url(#bg)"/>
+  <rect width="1280" height="460" rx="28" fill="url(#grid)"/>
+  <ellipse cx="300" cy="220" rx="310" ry="290" fill="url(#glow)" filter="url(#blur)"/>
+  <ellipse cx="1070" cy="60" rx="310" ry="210" fill="url(#glow)" opacity=".45" filter="url(#blur)"/>
+
+  <g transform="translate(118 76)" filter="url(#softGlow)">
+    <circle cx="150" cy="150" r="118" fill="#100d1c" stroke="#b58aff" stroke-width="2" stroke-opacity=".8"/>
+    <circle cx="150" cy="150" r="101" fill="none" stroke="#d8c1ff" stroke-width="1" stroke-opacity=".22"/>
+    <path d="M86 92c0-31 29-55 64-55s64 24 64 55v80c0 39-29 71-64 71s-64-32-64-71V92Z" fill="none" stroke="url(#accent)" stroke-width="17" stroke-linecap="round"/>
+    <path d="M74 238h152" stroke="url(#accent)" stroke-width="17" stroke-linecap="round"/>
+    <path d="M109 238c2 24 17 39 41 39s39-15 41-39" fill="none" stroke="url(#accent)" stroke-width="15" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(500 104)">
+    <text x="0" y="92" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="104" font-weight="800" letter-spacing="14" fill="url(#accent)">LUST</text>
+    <text x="5" y="145" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="24" font-weight="500" letter-spacing="2.5" fill="#d2c8e5">ANDROID VPN CLIENT</text>
+    <rect x="5" y="181" width="630" height="1" fill="#a980e7" opacity=".35"/>
+    <text x="5" y="226" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="25" fill="#f2edfa">Подписки · Xray-core · HEV tun2socks</text>
+    <text x="5" y="268" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="19" fill="#9f94b5">Открытый код. Собственный интерфейс. Прозрачная диагностика.</text>
+  </g>
+
+  <g transform="translate(1085 386)">
+    <circle cx="0" cy="0" r="4" fill="#c49cff"/>
+    <circle cx="18" cy="0" r="4" fill="#c49cff" opacity=".55"/>
+    <circle cx="36" cy="0" r="4" fill="#c49cff" opacity=".25"/>
+  </g>
+</svg>
