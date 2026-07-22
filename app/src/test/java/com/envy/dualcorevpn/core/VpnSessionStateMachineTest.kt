@@ -16,6 +16,27 @@ class VpnSessionStateMachineTest {
     }
 
     @Test
+    fun `publishes every state transition`() {
+        val published = mutableListOf<VpnSessionState>()
+        val machine = VpnSessionStateMachine(onStateChanged = { published.add(it) })
+
+        machine.dispatch(VpnEvent.ConnectRequested(EngineKind.XRAY))
+        machine.dispatch(VpnEvent.Connected(123L))
+        machine.dispatch(VpnEvent.DisconnectRequested)
+        machine.dispatch(VpnEvent.Disconnected)
+
+        assertEquals(
+            listOf(
+                VpnSessionState.Connecting(EngineKind.XRAY),
+                VpnSessionState.Connected(EngineKind.XRAY, 123L),
+                VpnSessionState.Disconnecting(EngineKind.XRAY),
+                VpnSessionState.Disconnected,
+            ),
+            published,
+        )
+    }
+
+    @Test
     fun `cannot report connected directly from disconnected`() {
         val machine = VpnSessionStateMachine()
         assertFailsWith<IllegalStateException> { machine.dispatch(VpnEvent.Connected(123L)) }

@@ -32,7 +32,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 
 class DualCoreVpnService : VpnService() {
-    private val stateMachine = VpnSessionStateMachine()
+    private val stateMachine = VpnSessionStateMachine(onStateChanged = VpnSessionStore::update)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operation: Job? = null
     private var coordinator: VpnSessionCoordinator? = null
@@ -109,6 +109,7 @@ class DualCoreVpnService : VpnService() {
                     .addRoute("0.0.0.0", 0)
                     .addRoute("::", 0)
                     .addDnsServer("1.1.1.1")
+                    .addDisallowedApplication(packageName)
                     .establish() ?: error("Android refused to establish the VPN interface")
             },
             writeConfig = { content ->

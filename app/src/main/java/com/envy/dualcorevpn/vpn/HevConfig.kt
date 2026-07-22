@@ -20,13 +20,9 @@ data class HevConfig(
           port: $socksPort
           udp: 'udp'
         misc:
-          task-stack-size: 20480
-          connect-timeout: 5000
-          read-write-timeout: 60000
+          tcp-read-write-timeout: 300000
+          udp-read-write-timeout: 60000
+          log-file: stderr
           log-level: warn
-        mapdns:
-          address: '198.18.0.0'
-          network: 15
-          netmask: '255.254.0.0'
     """.trimIndent()
 }

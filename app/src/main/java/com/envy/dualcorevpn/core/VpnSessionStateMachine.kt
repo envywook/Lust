@@ -10,6 +10,7 @@ sealed interface VpnEvent {
 
 class VpnSessionStateMachine(
     initial: VpnSessionState = VpnSessionState.Disconnected,
+    private val onStateChanged: (VpnSessionState) -> Unit = {},
 ) {
     var state: VpnSessionState = initial
         private set
@@ -45,6 +46,7 @@ class VpnSessionStateMachine(
                 else -> invalid(event)
             }
         }
+        onStateChanged(state)
         return state
     }
 
