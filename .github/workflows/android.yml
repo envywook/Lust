@@ -48,20 +48,43 @@ jobs:
       - name: Prepare verified native dependencies
         run: ./scripts/prepare-native-deps.sh
 
+      - name: Restore release signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LUST_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUST_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LUST_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LUST_KEY_PASSWORD }}
+        run: bash scripts/restore-release-signing.sh
+
       - name: Test, lint and build APK
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            ./gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease --stacktrace
+          else
+            ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
+          fi
 
       - name: Stage APK variants
         run: |
           set -euo pipefail
           mkdir -p dist
           shopt -s nullglob
-          apks=(app/build/outputs/apk/debug/app-*-debug.apk)
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            apks=(app/build/outputs/apk/release/app-*-release.apk)
+            suffix=release
+          else
+            apks=(app/build/outputs/apk/debug/app-*-debug.apk)
+            suffix=debug
+          fi
           test "${#apks[@]}" -eq 5
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            bash scripts/verify-release-signature.sh "${apks[@]}"
+          fi
           safe_ref="${GITHUB_REF_NAME//\//-}"
           for apk in "${apks[@]}"; do
-            variant="$(basename "${apk}" | sed -E 's/^app-(.*)-debug\.apk$/\1/')"
-            cp "${apk}" "dist/Lust-${safe_ref}-${variant}-debug.apk"
+            variant="$(basename "${apk}" | sed -E "s/^app-(.*)-${suffix}\\.apk$/\\1/")"
+            cp "${apk}" "dist/Lust-${safe_ref}-${variant}.apk"
           done
           (cd dist && sha256sum *.apk | sort | tee SHA256SUMS.txt)
 
@@ -123,8 +146,9 @@ jobs:
           disable-linux-hw-accel: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            bash scripts/seed-android-smoke.sh "${{ matrix.engine }}" app/build/outputs/apk/debug/app-x86_64-debug.apk
-            SKIP_APK_INSTALL=1 EXPECT_ENGINE="${{ matrix.engine }}" bash scripts/android-vpn-smoke.sh app/build/outputs/apk/debug/app-x86_64-debug.apk
+            apk=app/build/outputs/apk/debug/app-x86_64-debug.apk
+            bash scripts/seed-android-smoke.sh "${{ matrix.engine }}" "${apk}"
+            SKIP_APK_INSTALL=1 EXPECT_ENGINE="${{ matrix.engine }}" bash scripts/android-vpn-smoke.sh "${apk}"
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

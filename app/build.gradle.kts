@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseKeystorePath = providers.environmentVariable("LUST_KEYSTORE_PATH")
+val releaseKeystorePassword = providers.environmentVariable("LUST_KEYSTORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("LUST_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("LUST_KEY_PASSWORD")
+
 android {
     namespace = "com.envy.dualcorevpn"
     compileSdk = 34
@@ -11,9 +16,23 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "0.1.9-alpha"
+        versionCode = 11
+        versionName = "0.1.10-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = releaseKeystorePath.orNull?.let(::file)
+            storePassword = releaseKeystorePassword.orNull
+            keyAlias = releaseKeyAlias.orNull
+            keyPassword = releaseKeyPassword.orNull
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {
