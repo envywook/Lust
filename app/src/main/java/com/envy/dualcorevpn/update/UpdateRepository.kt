@@ -60,7 +60,10 @@ class UpdateRepository(private val context: Context) {
 
     fun install(apk: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+            context.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
             error("Разреши установку из Lust и нажми «Обновить» ещё раз")
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)

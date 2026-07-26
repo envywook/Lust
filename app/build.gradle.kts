@@ -16,8 +16,8 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.1.12-alpha"
+        versionCode = 14
+        versionName = "0.1.13-alpha"
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"5c9fb76e8a42eb4fecba7206fa20f35f54c78585d416b233ea77fcfbd343add6\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
