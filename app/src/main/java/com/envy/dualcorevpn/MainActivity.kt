@@ -107,15 +107,15 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-private val Background = Color(0xFF090D12)
-private val SurfaceColor = Color(0xFF111820)
-private val SurfaceRaised = Color(0xFF17212B)
-private val SurfaceStrong = Color(0xFF1D2A36)
-private val Accent = Color(0xFF65D9FF)
-private val AccentSoft = Color(0xFF173443)
-private val ContentPrimary = Color(0xFFF2F7FA)
-private val Muted = Color(0xFF91A1AF)
-private val Outline = Color(0xFF273744)
+private val Background = Color(0xFF000000)
+private val SurfaceColor = Color(0xFF0A0A0A)
+private val SurfaceRaised = Color(0xFF121212)
+private val SurfaceStrong = Color(0xFF1A1A1A)
+private val Accent = Color(0xFFF5F5F5)
+private val AccentSoft = Color(0xFF1C1C1C)
+private val ContentPrimary = Color(0xFFF5F5F5)
+private val Muted = Color(0xFFA3A3A3)
+private val Outline = Color(0xFF2B2B2B)
 private val Success = Color(0xFF55E39A)
 private val Warning = Color(0xFFFFC66D)
 private val Danger = Color(0xFFFF7280)
@@ -1049,7 +1049,7 @@ private fun EmbeddedLogConsole(
     val recent = entries.takeLast(3).asReversed()
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF090D12)),
+        colors = CardDefaults.cardColors(containerColor = Background),
         border = BorderStroke(1.dp, Outline),
         shape = RoundedCornerShape(18.dp),
     ) {
