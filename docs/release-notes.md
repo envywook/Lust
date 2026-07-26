@@ -1,3 +1,15 @@
+# Lust v0.1.12-alpha
+
+Проверочный patch-релиз для полного пути встроенного обновления из `v0.1.11-alpha` через GitHub Releases до системного установщика Android. Функциональный состав Mieru и updater не изменён.
+
+## Проверка
+
+- 85 unit-тестов, Android lint и сборка пяти APK;
+- оба VPN-ядра на Android API 34;
+- загрузка APK по ABI, SHA-256, package/version/certificate pin и системная установка из `v0.1.11-alpha`.
+
+> Alpha-сборка использует постоянную release-подпись Lust.
+
 # Lust v0.1.11-alpha
 
 ## Mieru для sing-box
