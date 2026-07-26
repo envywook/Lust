@@ -99,6 +99,7 @@ import com.envy.dualcorevpn.subscription.SubscriptionClipboard
 import com.envy.dualcorevpn.subscription.SubscriptionDeepLink
 import com.envy.dualcorevpn.subscription.SubscriptionImportRequest
 import com.envy.dualcorevpn.subscription.SubscriptionRepository
+import com.envy.dualcorevpn.update.UpdateRepository
 import com.envy.dualcorevpn.vpn.DualCoreVpnService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -137,6 +138,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: SubscriptionRepository
     private lateinit var settingsRepository: VpnSettingsRepository
     private lateinit var backupRepository: LustBackupRepository
+    private lateinit var updateRepository: UpdateRepository
     private var vpnSettings by mutableStateOf(VpnSettings())
     private var permissionResult: ((Boolean) -> Unit)? = null
     private var pendingConfig: String? = null
@@ -145,6 +147,7 @@ class MainActivity : ComponentActivity() {
     private var message by mutableStateOf<String?>(null)
     private var latencyResults by mutableStateOf<Map<String, ServerLatencyResult>>(emptyMap())
     private var latencyTesting by mutableStateOf(false)
+    private var updateStatus by mutableStateOf("Версия ${BuildConfig.VERSION_NAME}")
     private var pendingSubscriptionImport by mutableStateOf<SubscriptionImportRequest?>(null)
     private var pendingBackupRestore by mutableStateOf<String?>(null)
 
@@ -195,6 +198,7 @@ class MainActivity : ComponentActivity() {
         repository = SubscriptionRepository(applicationContext)
         settingsRepository = VpnSettingsRepository(applicationContext)
         backupRepository = LustBackupRepository(applicationContext)
+        updateRepository = UpdateRepository(applicationContext)
         vpnSettings = settingsRepository.load()
         AppLog.initialize(java.io.File(filesDir, "logs"))
         AppLog.info("UI", "Application opened")
@@ -219,6 +223,8 @@ class MainActivity : ComponentActivity() {
                     onExportLogs = ::exportLogs,
                     onExportBackup = { backupExportLauncher.launch("lust-backup.json") },
                     onImportBackup = { backupImportLauncher.launch(arrayOf("application/json", "text/plain")) },
+                    updateStatus = updateStatus,
+                    onCheckUpdate = ::checkForUpdate,
                     vpnSettings = vpnSettings,
                     onSaveVpnSettings = { settings ->
                         settingsRepository.save(settings)
@@ -242,6 +248,34 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
+            }
+        }
+    }
+
+    private fun checkForUpdate() {
+        if (loading) return
+        loading = true
+        updateStatus = "Проверка обновлений…"
+        lifecycleScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val update = updateRepository.check() ?: return@withContext null
+                    update to updateRepository.downloadAndVerify(update)
+                }
+            }.onSuccess { result ->
+                loading = false
+                if (result == null) {
+                    updateStatus = "Установлена актуальная версия ${BuildConfig.VERSION_NAME}"
+                } else {
+                    updateStatus = "Загружено ${result.first.tag}"
+                    runCatching { updateRepository.install(result.second) }.onFailure {
+                        message = it.message ?: "Не удалось открыть системный установщик"
+                    }
+                }
+            }.onFailure {
+                loading = false
+                updateStatus = "Ошибка проверки обновлений"
+                message = it.message ?: "Не удалось проверить обновление"
             }
         }
     }
@@ -430,6 +464,8 @@ private fun LustApp(
     onExportLogs: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    updateStatus: String,
+    onCheckUpdate: () -> Unit,
     vpnSettings: VpnSettings,
     onSaveVpnSettings: (VpnSettings) -> Unit,
     latencyResults: Map<String, ServerLatencyResult>,
@@ -468,7 +504,14 @@ private fun LustApp(
                     onClearLogs = AppLog::clear,
                     onExportLogs = onExportLogs,
                 )
-                AppTab.SETTINGS -> SettingsScreen(vpnSettings, onSaveVpnSettings, onExportBackup, onImportBackup)
+                AppTab.SETTINGS -> SettingsScreen(
+                    vpnSettings,
+                    onSaveVpnSettings,
+                    onExportBackup,
+                    onImportBackup,
+                    updateStatus,
+                    onCheckUpdate,
+                )
             }
             if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Accent, strokeWidth = 3.dp)
@@ -1125,6 +1168,8 @@ private fun SettingsScreen(
     onSave: (VpnSettings) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    updateStatus: String,
+    onCheckUpdate: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.ROOT) }
     when (page) {
@@ -1133,6 +1178,8 @@ private fun SettingsScreen(
             onOpenTraffic = { page = SettingsPage.TRAFFIC },
             onExportBackup = onExportBackup,
             onImportBackup = onImportBackup,
+            updateStatus = updateStatus,
+            onCheckUpdate = onCheckUpdate,
         )
         SettingsPage.TRAFFIC -> VpnSettingsDetails(
             settings = settings,
@@ -1148,6 +1195,8 @@ private fun SettingsRoot(
     onOpenTraffic: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    updateStatus: String,
+    onCheckUpdate: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -1187,6 +1236,14 @@ private fun SettingsRoot(
                 description = "Импорт ранее созданной резервной копии",
                 value = "ИМПОРТ",
                 onClick = onImportBackup,
+            )
+        }
+        item {
+            SettingsNavigationCard(
+                title = "Обновление Lust",
+                description = updateStatus,
+                value = "ПРОВЕРИТЬ",
+                onClick = onCheckUpdate,
             )
         }
         item { Spacer(Modifier.height(24.dp)) }

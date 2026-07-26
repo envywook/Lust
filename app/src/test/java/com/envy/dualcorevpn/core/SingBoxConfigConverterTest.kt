@@ -31,6 +31,23 @@ class SingBoxConfigConverterTest {
     }
 
     @Test
+    fun `native mieru envelope preserves schema and normalizes tag`() {
+        val envelope = """{
+          "lust_format":"sing-box",
+          "outbound":{"type":"mieru","server":"mieru.example.invalid","server_ports":["443-443","8443-8450"],"transport":"TCP","username":"fixture-user","password":"fixture-password","multiplexing":"MULTIPLEXING_LOW"}
+        }"""
+
+        val root = JSONObject(SingBoxConfigConverter.convert(envelope))
+        val outbound = root.getJSONArray("outbounds").getJSONObject(0)
+
+        assertEquals("mieru", outbound.getString("type"))
+        assertEquals("proxy", outbound.getString("tag"))
+        assertEquals(2, outbound.getJSONArray("server_ports").length())
+        assertEquals("MULTIPLEXING_LOW", outbound.getString("multiplexing"))
+        assertEquals("proxy", root.getJSONObject("route").getString("final"))
+    }
+
+    @Test
     fun `native sing-box envelope produces executable config`() {
         val envelope = """{
           "lust_format":"sing-box",

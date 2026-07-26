@@ -235,31 +235,36 @@ object SubscriptionParser {
                 val supported = line.startsWith("vmess://") || line.startsWith("vless://") ||
                     line.startsWith("trojan://") || line.startsWith("ss://") ||
                     line.startsWith("hysteria2://") || line.startsWith("hy2://") ||
-                    line.startsWith("tuic://") || line.startsWith("naive+https://")
+                    line.startsWith("tuic://") || line.startsWith("naive+https://") ||
+                    line.startsWith("mierus://") || line.startsWith("mieru://")
                 if (!supported) {
                     unsupported++
                     return@forEach
                 }
-                val profile = runCatching { parseLine(subscriptionId, line) }.getOrNull()
-                if (profile == null) {
+                val parsed = runCatching { parseLine(subscriptionId, line) }.getOrNull()
+                if (parsed.isNullOrEmpty()) {
                     invalid++
                     return@forEach
                 }
-                val key = "${profile.protocol}:${profile.address}:${profile.port}:${profile.name}"
-                if (profiles.putIfAbsent(key, profile) != null) duplicates++
+                parsed.forEach { profile ->
+                    val key = "${profile.protocol}:${profile.address}:${profile.port}:${profile.name}"
+                    if (profiles.putIfAbsent(key, profile) != null) duplicates++
+                }
             }
         return ParseReport(profiles.values.toList(), unsupported, invalid, duplicates)
     }
 
-    private fun parseLine(subscriptionId: String, line: String): ServerProfile? = when {
-        line.startsWith("vmess://") -> parseVmess(subscriptionId, line.removePrefix("vmess://"))
-        line.startsWith("vless://") -> parseStandardUri(subscriptionId, line, "vless")
-        line.startsWith("trojan://") -> parseStandardUri(subscriptionId, line, "trojan")
-        line.startsWith("ss://") -> parseStandardUri(subscriptionId, line, "shadowsocks")
-        line.startsWith("hysteria2://") || line.startsWith("hy2://") -> parseHysteria2(subscriptionId, line)
-        line.startsWith("tuic://") -> parseTuic(subscriptionId, line)
-        line.startsWith("naive+https://") -> parseNaive(subscriptionId, line)
-        else -> null
+    private fun parseLine(subscriptionId: String, line: String): List<ServerProfile> = when {
+        line.startsWith("vmess://") -> listOf(parseVmess(subscriptionId, line.removePrefix("vmess://")))
+        line.startsWith("vless://") -> listOf(parseStandardUri(subscriptionId, line, "vless"))
+        line.startsWith("trojan://") -> listOf(parseStandardUri(subscriptionId, line, "trojan"))
+        line.startsWith("ss://") -> listOf(parseStandardUri(subscriptionId, line, "shadowsocks"))
+        line.startsWith("hysteria2://") || line.startsWith("hy2://") -> listOf(parseHysteria2(subscriptionId, line))
+        line.startsWith("tuic://") -> listOf(parseTuic(subscriptionId, line))
+        line.startsWith("naive+https://") -> listOf(parseNaive(subscriptionId, line))
+        line.startsWith("mierus://") -> parseMieruSimple(subscriptionId, line)
+        line.startsWith("mieru://") -> error("Binary Mieru URI is not supported")
+        else -> emptyList()
     }
 
     private fun parseVmess(subscriptionId: String, encoded: String): ServerProfile {
@@ -399,6 +404,73 @@ object SubscriptionParser {
         put("server_port", port)
     }
 
+    private fun parseMieruSimple(subscriptionId: String, source: String): List<ServerProfile> {
+        val uri = URI(source)
+        val address = uri.host ?: error("В Mieru-ссылке отсутствует адрес сервера")
+        require(uri.port == -1) { "Mieru ports must be specified as query parameters" }
+        val credentials = uri.rawUserInfo?.split(':', limit = 2)?.map(::decodeUriComponent).orEmpty()
+        require(credentials.size == 2 && credentials.all(String::isNotBlank)) {
+            "Mieru-ссылка должна содержать имя пользователя и пароль"
+        }
+        val pairs = parseQueryPairs(uri.rawQuery)
+        val allowed = setOf("profile", "port", "protocol", "multiplexing")
+        require(pairs.all { it.first in allowed }) {
+            "Mieru-ссылка содержит неподдерживаемые параметры"
+        }
+        val profileName = pairs.singleValue("profile").takeIf(String::isNotBlank)
+            ?: error("Mieru profile is required")
+        val ports = pairs.filter { it.first == "port" }.map { it.second }
+        val transports = pairs.filter { it.first == "protocol" }.map { it.second.uppercase() }
+        require(ports.isNotEmpty() && ports.size == transports.size) {
+            "Mieru port and protocol counts must match"
+        }
+        require(transports.all { it == "TCP" || it == "UDP" }) { "Unsupported Mieru transport" }
+        ports.forEach(::validateMieruPortRange)
+        val multiplexing = pairs.singleValueOrNull("multiplexing")?.uppercase()
+            ?.takeUnless { it == "MULTIPLEXING_DEFAULT" }
+        require(multiplexing == null || multiplexing in setOf(
+            "MULTIPLEXING_OFF", "MULTIPLEXING_LOW", "MULTIPLEXING_MIDDLE", "MULTIPLEXING_HIGH",
+        )) { "Unsupported Mieru multiplexing" }
+
+        val grouped = ports.zip(transports).groupBy({ it.second }, { it.first })
+        return grouped.map { (transport, transportPorts) ->
+            val name = if (grouped.size == 1) profileName else "$profileName [$transport]"
+            val first = transportPorts.first()
+            val outbound = JSONObject().apply {
+                put("type", "mieru")
+                put("server", address)
+                if (transportPorts.size == 1 && '-' !in first) {
+                    put("server_port", first.toInt())
+                } else {
+                    put("server_ports", JSONArray(transportPorts.map { if ('-' in it) it else "$it-$it" }))
+                }
+                put("transport", transport)
+                put("username", credentials[0])
+                put("password", credentials[1])
+                multiplexing?.let { put("multiplexing", it) }
+
+            }
+            val displayPort = first.substringBefore('-').toInt()
+            val config = JSONObject().put("lust_format", "sing-box").put("outbound", outbound).toString()
+            val id = UUID.nameUUIDFromBytes(
+                "$subscriptionId:mieru:$address:$transport:${transportPorts.joinToString()}:$name".toByteArray(),
+            ).toString()
+            ServerProfile(id, subscriptionId, name, "mieru", address, displayPort, config)
+        }
+    }
+
+    private fun validateMieruPortRange(value: String) {
+        val bounds = value.split('-', limit = 2).map { it.toIntOrNull() ?: error("Invalid Mieru port") }
+        require(bounds.size in 1..2 && bounds.all { it in 1..65535 }) { "Invalid Mieru port" }
+        require(bounds.size == 1 || bounds[0] <= bounds[1]) { "Invalid Mieru port range" }
+    }
+
+    private fun List<Pair<String, String>>.singleValue(key: String): String =
+        filter { it.first == key }.single().second
+
+    private fun List<Pair<String, String>>.singleValueOrNull(key: String): String? =
+        filter { it.first == key }.let { values -> if (values.isEmpty()) null else values.single().second }
+
     private fun nativeProfile(
         subscriptionId: String,
         uri: URI,
@@ -506,10 +578,12 @@ object SubscriptionParser {
         return options.optString("xPaddingBytes")
     }
 
-    private fun parseQuery(query: String?): Map<String, String> = query.orEmpty().split('&').mapNotNull {
+    private fun parseQueryPairs(query: String?): List<Pair<String, String>> = query.orEmpty().split('&').mapNotNull {
         val pair = it.split('=', limit = 2)
         if (pair[0].isBlank()) null else decode(pair[0]) to decode(pair.getOrElse(1) { "" })
-    }.toMap()
+    }
+
+    private fun parseQuery(query: String?): Map<String, String> = parseQueryPairs(query).toMap()
 
     private fun decodeMaybeBase64(value: String): String = if (value.contains("://")) value else runCatching { decodeBase64(value) }.getOrDefault(value)
     private fun decodeBase64(value: String): String {
@@ -517,4 +591,6 @@ object SubscriptionParser {
         return String(Base64.decode(normalized, Base64.DEFAULT), StandardCharsets.UTF_8)
     }
     private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+
+    private fun decodeUriComponent(value: String): String = decode(value.replace("+", "%2B"))
 }

@@ -23,6 +23,58 @@ class SubscriptionParserTest {
     }
 
     @Test
+    fun `imports official mierus links and splits mixed transports`() {
+        val link = "mierus://fixture-user:fixture-password@mieru.example.invalid?profile=Fixture&port=443&protocol=TCP&port=8000-8010&protocol=UDP&multiplexing=MULTIPLEXING_LOW"
+
+        val profiles = SubscriptionParser.parse("subscription", link)
+
+        assertEquals(listOf("Fixture [TCP]", "Fixture [UDP]"), profiles.map { it.name })
+        assertEquals(listOf("mieru", "mieru"), profiles.map { it.protocol })
+        val tcp = JSONObject(profiles[0].config).getJSONObject("outbound")
+        assertEquals("mieru", tcp.getString("type"))
+        assertEquals("TCP", tcp.getString("transport"))
+        assertEquals(443, tcp.getInt("server_port"))
+        assertEquals("fixture-user", tcp.getString("username"))
+        assertEquals("fixture-password", tcp.getString("password"))
+        assertEquals("MULTIPLEXING_LOW", tcp.getString("multiplexing"))
+        val udp = JSONObject(profiles[1].config).getJSONObject("outbound")
+        assertEquals("UDP", udp.getString("transport"))
+        assertEquals("8000-8010", udp.getJSONArray("server_ports").getString(0))
+        val runtime = JSONObject(SingBoxConfigConverter.convert(profiles[0].config))
+        assertEquals("proxy", runtime.getJSONArray("outbounds").getJSONObject(0).getString("tag"))
+    }
+
+    @Test
+    fun `rejects incompatible and malformed mieru links without misparsing binary uri`() {
+        val report = SubscriptionParser.parseReport(
+            "subscription",
+            listOf(
+                "mierus://user:pass@host.example?profile=Bad&port=443&protocol=TCP&mtu=1400",
+                "mierus://user:pass@host.example?profile=Bad&port=9000-8000&protocol=UDP",
+                "mierus://user:pass@host.example?profile=Bad&port=443&protocol=TCP&port=8443",
+                "mierus://user:pass@host.example?profile=Bad&port=443&protocol=TCP&traffic-pattern=GgQIARAK",
+                "mieru://AAECAw==",
+            ).joinToString("\n"),
+        )
+
+        assertEquals(0, report.profiles.size)
+        assertEquals(5, report.invalidCount)
+        assertEquals(0, report.unsupportedCount)
+    }
+
+    @Test
+    fun `preserves plus signs and percent encoding in mieru credentials`() {
+        val profile = SubscriptionParser.parse(
+            "subscription",
+            "mierus://user+name:pass%2Bword@mieru.example?profile=Plus&port=443&protocol=TCP",
+        ).single()
+
+        val outbound = JSONObject(profile.config).getJSONObject("outbound")
+        assertEquals("user+name", outbound.getString("username"))
+        assertEquals("pass+word", outbound.getString("password"))
+    }
+
+    @Test
     fun `imports hysteria2 tuic and naive as native sing-box profiles`() {
         val body = listOf(
             "hysteria2://secret@hy2.example:8443?sni=edge.example&insecure=1&obfs=salamander&obfs-password=mask#HY2",
