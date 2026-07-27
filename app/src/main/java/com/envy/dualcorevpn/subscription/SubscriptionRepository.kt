@@ -93,6 +93,12 @@ class SubscriptionRepository(context: Context) {
         preferences.edit().putString(KEY_SELECTED, serverId).apply()
     }
 
+    fun importProfile(profile: ServerProfile) {
+        val updated = servers().filterNot { it.id == profile.id } + profile
+        saveServers(updated)
+        select(profile.id)
+    }
+
     suspend fun addAndUpdate(name: String, url: String): SubscriptionUpdateResult {
         require(url.startsWith("https://") || url.startsWith("http://")) {
             "Ссылка подписки должна начинаться с https:// или http://"

@@ -25,6 +25,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      MAXSPEED_TELEGRAM_URL: https://t.me/ZmaxspeedvpnZ
 
     steps:
       - name: Check out source

@@ -43,4 +43,18 @@ class ServerLatencyTesterTest {
         assertTrue(peak.get() <= 3)
         assertEquals(3, peak.get())
     }
+
+    @Test
+    fun `tests a single server without changing result shape`() = runBlocking {
+        val tester = ServerLatencyTester { host, port ->
+            assertEquals("single.example", host)
+            assertEquals(443, port)
+            27L
+        }
+
+        val result = tester.testOne(server("single"), timeoutMillis = 3_000)
+
+        assertEquals(27L, result.latencyMillis)
+        assertEquals(null, result.error)
+    }
 }

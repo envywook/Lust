@@ -7,6 +7,9 @@ val releaseKeystorePath = providers.environmentVariable("LUST_KEYSTORE_PATH")
 val releaseKeystorePassword = providers.environmentVariable("LUST_KEYSTORE_PASSWORD")
 val releaseKeyAlias = providers.environmentVariable("LUST_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("LUST_KEY_PASSWORD")
+fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+val maxSpeedTelegramUrl = providers.environmentVariable("MAXSPEED_TELEGRAM_URL").orElse("")
+val maxSpeedSubscriptionHosts = providers.environmentVariable("MAXSPEED_SUBSCRIPTION_HOSTS").orElse("")
 
 android {
     namespace = "com.envy.dualcorevpn"
@@ -16,9 +19,11 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.1.14-alpha"
+        versionCode = 16
+        versionName = "0.1.15-alpha"
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"5c9fb76e8a42eb4fecba7206fa20f35f54c78585d416b233ea77fcfbd343add6\"")
+        buildConfigField("String", "MAXSPEED_TELEGRAM_URL", buildConfigString(maxSpeedTelegramUrl.get()))
+        buildConfigField("String", "MAXSPEED_SUBSCRIPTION_HOSTS", buildConfigString(maxSpeedSubscriptionHosts.get()))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -71,6 +76,11 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("org.json:json:20231013")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:core-ktx:1.5.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
 
 

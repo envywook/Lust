@@ -43,7 +43,8 @@
 - добавление, обновление и безопасный deep-link/clipboard импорт подписок;
 - versioned export/import резервной копии через системный Android document picker с подтверждением и валидацией;
 - Base64 и plain-text списки серверов;
-- импорт ссылок **VLESS, VMess, Trojan, Shadowsocks, Hysteria2/Hy2, TUIC и NaiveProxy**;
+- импорт ссылок **VLESS, VMess, Trojan, Shadowsocks, Hysteria2/Hy2, TUIC, NaiveProxy и Mieru**;
+- безопасный `mieru://` deep-link импорт с проверкой версии и подтверждением перед сохранением;
 - группы, поиск, избранное, TCP endpoint latency и сортировка серверов;
 - трафик, лимит и срок действия из `subscription-userinfo`;
 - Android `VpnService`, foreground-уведомление и HEV tun2socks;

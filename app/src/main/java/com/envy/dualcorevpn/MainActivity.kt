@@ -9,6 +9,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -21,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +50,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -63,8 +73,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -93,6 +108,8 @@ import com.envy.dualcorevpn.routing.RoutingMode
 import com.envy.dualcorevpn.server.ServerSort
 import com.envy.dualcorevpn.settings.VpnSettings
 import com.envy.dualcorevpn.settings.VpnSettingsRepository
+import com.envy.dualcorevpn.subscription.MieruDeepLink
+import com.envy.dualcorevpn.subscription.MieruImportRequest
 import com.envy.dualcorevpn.subscription.ServerProfile
 import com.envy.dualcorevpn.subscription.Subscription
 import com.envy.dualcorevpn.subscription.SubscriptionClipboard
@@ -100,6 +117,10 @@ import com.envy.dualcorevpn.subscription.SubscriptionDeepLink
 import com.envy.dualcorevpn.subscription.SubscriptionImportRequest
 import com.envy.dualcorevpn.subscription.SubscriptionRepository
 import com.envy.dualcorevpn.update.UpdateRepository
+import com.envy.dualcorevpn.ui.HomeDashboard
+import com.envy.dualcorevpn.ui.DashboardHeader
+import com.envy.dualcorevpn.ui.SpeedDashboard
+import com.envy.dualcorevpn.ui.dashboardStrings
 import com.envy.dualcorevpn.vpn.DualCoreVpnService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -108,15 +129,15 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-private val Background = Color(0xFF000000)
-private val SurfaceColor = Color(0xFF0A0A0A)
-private val SurfaceRaised = Color(0xFF121212)
-private val SurfaceStrong = Color(0xFF1A1A1A)
-private val Accent = Color(0xFFF5F5F5)
-private val AccentSoft = Color(0xFF1C1C1C)
-private val ContentPrimary = Color(0xFFF5F5F5)
-private val Muted = Color(0xFFA3A3A3)
-private val Outline = Color(0xFF2B2B2B)
+private val Background = Color(0xFF080A09)
+private val SurfaceColor = Color(0xFF151817)
+private val SurfaceRaised = Color(0xFF101211)
+private val SurfaceStrong = Color(0xFF1C2521)
+private val Accent = Color(0xFFA6F3D1)
+private val AccentSoft = Color(0xFF1C2521)
+private val ContentPrimary = Color(0xFFF4F6F5)
+private val Muted = Color(0xFF9EA5A1)
+private val Outline = Color(0xFF343936)
 private val Success = Color(0xFF55E39A)
 private val Warning = Color(0xFFFFC66D)
 private val Danger = Color(0xFFFF7280)
@@ -147,8 +168,11 @@ class MainActivity : ComponentActivity() {
     private var message by mutableStateOf<String?>(null)
     private var latencyResults by mutableStateOf<Map<String, ServerLatencyResult>>(emptyMap())
     private var latencyTesting by mutableStateOf(false)
-    private var updateStatus by mutableStateOf("Версия ${BuildConfig.VERSION_NAME}")
+    private var latencyTestingIds by mutableStateOf<Set<String>>(emptySet())
+    private var updateStatus by mutableStateOf("")
     private var pendingSubscriptionImport by mutableStateOf<SubscriptionImportRequest?>(null)
+    private var pendingMieruImport by mutableStateOf<MieruImportRequest?>(null)
+    private var clearViewedIntentDataOnResume = false
     private var pendingBackupRestore by mutableStateOf<String?>(null)
 
     private val backupExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -199,6 +223,7 @@ class MainActivity : ComponentActivity() {
         settingsRepository = VpnSettingsRepository(applicationContext)
         backupRepository = LustBackupRepository(applicationContext)
         updateRepository = UpdateRepository(applicationContext)
+        updateStatus = getString(R.string.update_version, BuildConfig.VERSION_NAME)
         vpnSettings = settingsRepository.load()
         AppLog.initialize(java.io.File(filesDir, "logs"))
         AppLog.info("UI", "Application opened")
@@ -233,8 +258,45 @@ class MainActivity : ComponentActivity() {
                     },
                     latencyResults = latencyResults,
                     latencyTesting = latencyTesting,
+                    latencyTestingIds = latencyTestingIds,
                     onTestLatency = ::testServerLatency,
+                    onTestServerLatency = ::testSingleServerLatency,
                 )
+                pendingMieruImport?.let { request ->
+                    AlertDialog(
+                        onDismissRequest = { pendingMieruImport = null },
+                        title = { Text(stringResource(R.string.mieru_import_title)) },
+                        text = {
+                            Text(
+                                stringResource(
+                                    R.string.mieru_import_summary,
+                                    request.profile.name,
+                                    request.profile.address,
+                                    request.profile.port,
+                                    request.username,
+                                    request.transport,
+                                    request.mtu,
+                                    request.multiplexing,
+                                ),
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    repository.importProfile(request.profile)
+                                    pendingMieruImport = null
+                                    reloadUi++
+                                    message = getString(R.string.mieru_import_success)
+                                },
+                            ) { Text(stringResource(R.string.mieru_import_confirm)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingMieruImport = null }) {
+                                Text(stringResource(R.string.mieru_import_cancel))
+                            }
+                        },
+                    )
+                }
                 pendingBackupRestore?.let {
                     AlertDialog(
                         onDismissRequest = { pendingBackupRestore = null },
@@ -255,7 +317,7 @@ class MainActivity : ComponentActivity() {
     private fun checkForUpdate() {
         if (loading) return
         loading = true
-        updateStatus = "Проверка обновлений…"
+        updateStatus = getString(R.string.update_checking)
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -265,17 +327,18 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { result ->
                 loading = false
                 if (result == null) {
-                    updateStatus = "Установлена актуальная версия ${BuildConfig.VERSION_NAME}"
+                    updateStatus = getString(R.string.update_latest, BuildConfig.VERSION_NAME)
                 } else {
-                    updateStatus = "Загружено ${result.first.tag}"
+                    updateStatus = getString(R.string.update_downloaded, result.first.tag)
                     runCatching { updateRepository.install(result.second) }.onFailure {
                         message = it.message ?: "Не удалось открыть системный установщик"
                     }
                 }
             }.onFailure {
                 loading = false
-                updateStatus = "Ошибка проверки обновлений"
-                message = it.message ?: "Не удалось проверить обновление"
+                val reason = it.message ?: getString(R.string.update_unknown_error)
+                updateStatus = getString(R.string.update_error, reason)
+                message = updateStatus
             }
         }
     }
@@ -304,11 +367,25 @@ class MainActivity : ComponentActivity() {
         handleSubscriptionIntent(intent)
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        if (clearViewedIntentDataOnResume) {
+            intent?.data = null
+            clearViewedIntentDataOnResume = false
+        }
+    }
+
     private fun handleSubscriptionIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
-        val request = SubscriptionDeepLink.parse(intent.dataString) ?: return
-        pendingSubscriptionImport = request
-        intent.data = null
+        val source = intent.dataString ?: return
+        clearViewedIntentDataOnResume = true
+        if (source.startsWith("mieru://", ignoreCase = true)) {
+            runCatching { MieruDeepLink.parse(source) }
+                .onSuccess { pendingMieruImport = it }
+                .onFailure { message = getString(R.string.mieru_import_invalid) }
+            return
+        }
+        pendingSubscriptionImport = SubscriptionDeepLink.parse(source) ?: return
     }
 
     private fun addSubscription(name: String, url: String) = runSubscriptionAction {
@@ -338,8 +415,21 @@ class MainActivity : ComponentActivity() {
         if (latencyTesting) return
         lifecycleScope.launch {
             latencyTesting = true
-            latencyResults = ServerLatencyTester().test(repository.servers())
+            val servers = repository.servers()
+            latencyTestingIds = servers.mapTo(mutableSetOf()) { it.id }
+            latencyResults = ServerLatencyTester().test(servers, concurrency = 10, timeoutMillis = 3_000)
+            latencyTestingIds = emptySet()
             latencyTesting = false
+        }
+    }
+
+    private fun testSingleServerLatency(server: ServerProfile) {
+        if (server.id in latencyTestingIds) return
+        lifecycleScope.launch {
+            latencyTestingIds = latencyTestingIds + server.id
+            val result = ServerLatencyTester().testOne(server, timeoutMillis = 3_000)
+            latencyResults = latencyResults + (server.id to result)
+            latencyTestingIds = latencyTestingIds - server.id
         }
     }
 
@@ -405,43 +495,35 @@ private fun LustTheme(content: @Composable () -> Unit) {
     )
 }
 
-private enum class AppTab(val title: String) {
-    HOME("Подключение"),
-    SETTINGS("Настройки"),
-}
+private enum class AppTab { SPEED, HOME, SETTINGS, MANAGE }
 
 @Composable
 private fun AppTabIcon(tab: AppTab, selected: Boolean) {
-    val color = if (selected) Accent else Muted
-    Canvas(Modifier.size(22.dp)) {
-        val stroke = if (selected) 2.2.dp.toPx() else 1.8.dp.toPx()
-        val line = Stroke(width = stroke)
-        when (tab) {
-            AppTab.HOME -> {
-                val roof = Path().apply {
-                    moveTo(size.width * .16f, size.height * .48f)
-                    lineTo(size.width * .5f, size.height * .18f)
-                    lineTo(size.width * .84f, size.height * .48f)
-                }
-                drawPath(roof, color, style = line)
-                val body = Path().apply {
-                    moveTo(size.width * .24f, size.height * .42f)
-                    lineTo(size.width * .24f, size.height * .82f)
-                    lineTo(size.width * .76f, size.height * .82f)
-                    lineTo(size.width * .76f, size.height * .42f)
-                }
-                drawPath(body, color, style = line)
-            }
-            AppTab.SETTINGS -> {
-                drawCircle(color, radius = size.minDimension * .24f, center = center, style = line)
-                drawCircle(color, radius = size.minDimension * .08f, center = center, style = line)
-                val r1 = size.minDimension * .3f
-                val r2 = size.minDimension * .43f
-                for ((dx, dy) in listOf(0f to -1f, 1f to 0f, 0f to 1f, -1f to 0f)) {
-                    drawLine(color, Offset(center.x + dx * r1, center.y + dy * r1), Offset(center.x + dx * r2, center.y + dy * r2), stroke)
-                }
-            }
-        }
+    val (regular, filled) = when (tab) {
+        AppTab.SPEED -> R.drawable.ic_speed_regular to R.drawable.ic_speed_filled
+        AppTab.HOME -> R.drawable.ic_home_regular to R.drawable.ic_home_filled
+        AppTab.SETTINGS -> R.drawable.ic_settings_regular to R.drawable.ic_settings_filled
+        AppTab.MANAGE -> return
+    }
+    val size = when (tab) {
+        AppTab.HOME -> 29.dp
+        AppTab.SPEED -> 28.dp
+        AppTab.SETTINGS -> 27.dp
+        AppTab.MANAGE -> 28.dp
+    }
+    val yOffset = when (tab) {
+        AppTab.HOME -> 0.dp
+        AppTab.SPEED -> 1.dp
+        AppTab.SETTINGS -> 0.5.dp
+        AppTab.MANAGE -> 0.dp
+    }
+    Crossfade(targetState = selected, animationSpec = tween(140), label = "tabIcon") { active ->
+        Icon(
+            painter = painterResource(if (active) filled else regular),
+            contentDescription = null,
+            tint = if (active) Accent else Muted,
+            modifier = Modifier.size(size).offset(y = yOffset),
+        )
     }
 }
 
@@ -470,11 +552,14 @@ private fun LustApp(
     onSaveVpnSettings: (VpnSettings) -> Unit,
     latencyResults: Map<String, ServerLatencyResult>,
     latencyTesting: Boolean,
+    latencyTestingIds: Set<String>,
     onTestLatency: () -> Unit,
+    onTestServerLatency: (ServerProfile) -> Unit,
 ) {
     revision.hashCode()
     val vpnState by VpnSessionStore.state.collectAsState()
     val logEntries by AppLog.entries.collectAsState()
+    val haptic = LocalHapticFeedback.current
     var tab by remember { mutableStateOf(AppTab.HOME) }
     val subscriptions = repository.subscriptions()
     val servers = repository.servers()
@@ -482,8 +567,37 @@ private fun LustApp(
 
     Column(Modifier.fillMaxSize().background(Background)) {
         Box(Modifier.weight(1f)) {
-            when (tab) {
-                AppTab.HOME -> HomeScreen(
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                },
+                label = "mainTab",
+            ) { activeTab ->
+            when (activeTab) {
+                AppTab.HOME -> HomeDashboard(
+                    state = vpnState,
+                    selected = selected,
+                    servers = servers,
+                    subscriptions = subscriptions,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    onSelect = onSelect,
+                )
+                AppTab.SPEED -> SpeedDashboard(
+                    state = vpnState,
+                    selected = selected,
+                    servers = servers,
+                    subscriptions = subscriptions,
+                    latencyResults = latencyResults,
+                    latencyTesting = latencyTesting,
+                    latencyTestingIds = latencyTestingIds,
+                    onTestLatency = onTestLatency,
+                    onTestServerLatency = onTestServerLatency,
+                    onSelect = onSelect,
+                    onManageSubscriptions = { tab = AppTab.MANAGE },
+                )
+                AppTab.MANAGE -> HomeScreen(
                     state = vpnState,
                     selected = selected,
                     servers = servers,
@@ -513,30 +627,61 @@ private fun LustApp(
                     onCheckUpdate,
                 )
             }
+            }
             if (loading) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Accent, strokeWidth = 3.dp)
             }
         }
-        Surface(
-            color = SurfaceColor,
-            shadowElevation = 12.dp,
-            modifier = Modifier.navigationBarsPadding(),
+        Box(
+            modifier = Modifier.background(Background).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 12.dp),
         ) {
-            NavigationBar(containerColor = SurfaceColor, tonalElevation = 0.dp) {
-                AppTab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { tab = item },
-                        icon = { AppTabIcon(item, tab == item) },
-                        label = { Text(item.title, fontSize = 10.sp, maxLines = 1) },
-                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-                            selectedIconColor = Accent,
-                            selectedTextColor = Accent,
-                            indicatorColor = Color.Transparent,
-                            unselectedIconColor = Muted,
-                            unselectedTextColor = Muted,
-                        ),
-                    )
+            Surface(
+                color = Color(0xF5111413),
+                shape = RoundedCornerShape(23.dp),
+                border = BorderStroke(1.dp, Color(0xFF323735)),
+                modifier = Modifier.fillMaxWidth().height(72.dp),
+            ) {
+                val strings = dashboardStrings()
+                Row(Modifier.fillMaxSize().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(AppTab.SPEED, AppTab.HOME, AppTab.SETTINGS).forEach { item ->
+                        val label = when (item) {
+                            AppTab.SPEED -> strings.speed
+                            AppTab.HOME -> strings.home
+                            AppTab.SETTINGS -> strings.settings
+                            AppTab.MANAGE -> ""
+                        }
+                        val active = tab == item
+                        val itemColor by animateColorAsState(
+                            if (active) Color(0xFF1C2521) else Color.Transparent,
+                            tween(180),
+                            label = "navColor",
+                        )
+                        val itemBorder by animateColorAsState(
+                            if (active) Color(0x8CA6F3D1) else Color.Transparent,
+                            tween(180),
+                            label = "navBorder",
+                        )
+                        Surface(
+                            modifier = Modifier.weight(1f).fillMaxHeight().clickable {
+                                if (tab != item) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    tab = item
+                                }
+                            },
+                            shape = RoundedCornerShape(18.dp),
+                            color = itemColor,
+                            border = BorderStroke(1.dp, itemBorder),
+                        ) {
+                            Column(
+                                Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                AppTabIcon(item, active)
+                                Text(label, color = if (active) Color(0xFFA6F3D1) else Color(0xFFA0A5A2), fontSize = 10.sp, maxLines = 1)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1173,14 +1318,17 @@ private fun SettingsScreen(
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.ROOT) }
     when (page) {
-        SettingsPage.ROOT -> SettingsRoot(
-            settings = settings,
-            onOpenTraffic = { page = SettingsPage.TRAFFIC },
-            onExportBackup = onExportBackup,
-            onImportBackup = onImportBackup,
-            updateStatus = updateStatus,
-            onCheckUpdate = onCheckUpdate,
-        )
+        SettingsPage.ROOT -> Column(Modifier.fillMaxSize()) {
+            DashboardHeader()
+            SettingsRoot(
+                settings = settings,
+                onOpenTraffic = { page = SettingsPage.TRAFFIC },
+                onExportBackup = onExportBackup,
+                onImportBackup = onImportBackup,
+                updateStatus = updateStatus,
+                onCheckUpdate = onCheckUpdate,
+            )
+        }
         SettingsPage.TRAFFIC -> VpnSettingsDetails(
             settings = settings,
             onSave = onSave,
@@ -1202,47 +1350,46 @@ private fun SettingsRoot(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { Spacer(Modifier.height(18.dp)); ScreenTitle("Настройки", "Управление приложением и VPN") }
-        item { SettingsSectionTitle("VPN И ТРАФИК") }
+        item { SettingsSectionTitle(stringResource(R.string.settings_vpn_traffic)) }
         item {
             SettingsNavigationCard(
-                title = "Настройки трафика",
-                description = "DNS, MTU, IPv6 и правила маршрутизации",
+                title = stringResource(R.string.settings_traffic_title),
+                description = stringResource(R.string.settings_traffic_description),
                 value = routingModeLabel(settings.routingMode),
                 onClick = onOpenTraffic,
             )
         }
-        item { SettingsSectionTitle("НАСТРОЙКИ ЯДРА") }
+        item { SettingsSectionTitle(stringResource(R.string.settings_core)) }
         item {
             SettingsNavigationCard(
-                title = "VPN-ядро",
-                description = "Активное ядро для следующего подключения",
+                title = stringResource(R.string.settings_core_title),
+                description = stringResource(R.string.settings_core_description),
                 value = engineName(settings.engine),
                 onClick = onOpenTraffic,
             )
         }
-        item { SettingsSectionTitle("СЛУЖЕБНОЕ") }
+        item { SettingsSectionTitle(stringResource(R.string.settings_service)) }
         item {
             SettingsNavigationCard(
-                title = "Резервирование настроек",
-                description = "Экспорт подписок, серверов и VPN-настроек",
-                value = "ЭКСПОРТ",
+                title = stringResource(R.string.settings_backup_title),
+                description = stringResource(R.string.settings_backup_description),
+                value = stringResource(R.string.settings_export),
                 onClick = onExportBackup,
             )
         }
         item {
             SettingsNavigationCard(
-                title = "Восстановление настроек",
-                description = "Импорт ранее созданной резервной копии",
-                value = "ИМПОРТ",
+                title = stringResource(R.string.settings_restore_title),
+                description = stringResource(R.string.settings_restore_description),
+                value = stringResource(R.string.settings_import),
                 onClick = onImportBackup,
             )
         }
         item {
             SettingsNavigationCard(
-                title = "Обновление Lust",
+                title = stringResource(R.string.settings_update_title),
                 description = updateStatus,
-                value = "ПРОВЕРИТЬ",
+                value = stringResource(R.string.settings_update_check),
                 onClick = onCheckUpdate,
             )
         }
@@ -1261,15 +1408,15 @@ private fun SettingsNavigationCard(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = SurfaceColor),
         border = BorderStroke(1.dp, Outline),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, color = ContentPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
-                Text(description, color = Muted, fontSize = 12.sp, lineHeight = 16.sp)
+                Text(description, color = Muted, fontSize = 13.sp, lineHeight = 17.sp)
             }
-            Text(value, color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
+            Text(value, color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
             Text("  ›", color = Muted, fontSize = 22.sp)
         }
     }
@@ -1489,7 +1636,7 @@ private fun EmptyState(title: String, text: String, button: String, onClick: () 
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+    Text(text, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
 }
 
 private fun serverCountLabel(count: Int): String {
