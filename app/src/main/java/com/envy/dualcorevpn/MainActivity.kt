@@ -239,13 +239,11 @@ class MainActivity : ComponentActivity() {
                     onConnect = ::requestConnect,
                     onDisconnect = ::stopVpn,
                     onSelect = { repository.select(it.id); reloadUi++ },
-                    onToggleFavorite = { repository.toggleFavorite(it.id); reloadUi++ },
                     pendingSubscriptionImport = pendingSubscriptionImport,
                     onDismissSubscriptionImport = { pendingSubscriptionImport = null },
                     onAddSubscription = ::addSubscription,
                     onUpdateSubscription = ::updateSubscription,
                     onRemoveSubscription = { repository.remove(it); reloadUi++ },
-                    onExportLogs = ::exportLogs,
                     onExportBackup = { backupExportLauncher.launch("lust-backup.json") },
                     onImportBackup = { backupImportLauncher.launch(arrayOf("application/json", "text/plain")) },
                     updateStatus = updateStatus,
@@ -495,7 +493,7 @@ private fun LustTheme(content: @Composable () -> Unit) {
     )
 }
 
-private enum class AppTab { SPEED, HOME, SETTINGS, MANAGE }
+private enum class AppTab { SPEED, HOME, SETTINGS, SUBSCRIPTIONS }
 
 @Composable
 private fun AppTabIcon(tab: AppTab, selected: Boolean) {
@@ -503,19 +501,19 @@ private fun AppTabIcon(tab: AppTab, selected: Boolean) {
         AppTab.SPEED -> R.drawable.ic_speed_regular to R.drawable.ic_speed_filled
         AppTab.HOME -> R.drawable.ic_home_regular to R.drawable.ic_home_filled
         AppTab.SETTINGS -> R.drawable.ic_settings_regular to R.drawable.ic_settings_filled
-        AppTab.MANAGE -> return
+        AppTab.SUBSCRIPTIONS -> return
     }
     val size = when (tab) {
         AppTab.HOME -> 29.dp
         AppTab.SPEED -> 28.dp
         AppTab.SETTINGS -> 27.dp
-        AppTab.MANAGE -> 28.dp
+        AppTab.SUBSCRIPTIONS -> 28.dp
     }
     val yOffset = when (tab) {
         AppTab.HOME -> 0.dp
         AppTab.SPEED -> 1.dp
         AppTab.SETTINGS -> 0.5.dp
-        AppTab.MANAGE -> 0.dp
+        AppTab.SUBSCRIPTIONS -> 0.dp
     }
     Crossfade(targetState = selected, animationSpec = tween(140), label = "tabIcon") { active ->
         Icon(
@@ -537,13 +535,11 @@ private fun LustApp(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onSelect: (ServerProfile) -> Unit,
-    onToggleFavorite: (ServerProfile) -> Unit,
     pendingSubscriptionImport: SubscriptionImportRequest?,
     onDismissSubscriptionImport: () -> Unit,
     onAddSubscription: (String, String) -> Unit,
     onUpdateSubscription: (Subscription) -> Unit,
     onRemoveSubscription: (Subscription) -> Unit,
-    onExportLogs: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     updateStatus: String,
@@ -558,7 +554,6 @@ private fun LustApp(
 ) {
     revision.hashCode()
     val vpnState by VpnSessionStore.state.collectAsState()
-    val logEntries by AppLog.entries.collectAsState()
     val haptic = LocalHapticFeedback.current
     var tab by remember { mutableStateOf(AppTab.HOME) }
     val subscriptions = repository.subscriptions()
@@ -595,28 +590,15 @@ private fun LustApp(
                     onTestLatency = onTestLatency,
                     onTestServerLatency = onTestServerLatency,
                     onSelect = onSelect,
-                    onManageSubscriptions = { tab = AppTab.MANAGE },
+                    onManageSubscriptions = { tab = AppTab.SUBSCRIPTIONS },
                 )
-                AppTab.MANAGE -> HomeScreen(
-                    state = vpnState,
-                    selected = selected,
-                    servers = servers,
+                AppTab.SUBSCRIPTIONS -> SubscriptionsScreen(
                     subscriptions = subscriptions,
-                    favoriteIds = repository.favoriteServerIds(),
-                    latencyResults = latencyResults,
-                    latencyTesting = latencyTesting,
                     loading = loading,
-                    onConnect = onConnect,
-                    onDisconnect = onDisconnect,
-                    onSelect = onSelect,
-                    onToggleFavorite = onToggleFavorite,
-                    onTestLatency = onTestLatency,
-                    onAddSubscription = onAddSubscription,
-                    onUpdateSubscription = onUpdateSubscription,
-                    onRemoveSubscription = onRemoveSubscription,
-                    logEntries = logEntries,
-                    onClearLogs = AppLog::clear,
-                    onExportLogs = onExportLogs,
+                    onBack = { tab = AppTab.SPEED },
+                    onAdd = onAddSubscription,
+                    onUpdate = onUpdateSubscription,
+                    onRemove = onRemoveSubscription,
                 )
                 AppTab.SETTINGS -> SettingsScreen(
                     vpnSettings,
@@ -648,9 +630,9 @@ private fun LustApp(
                             AppTab.SPEED -> strings.speed
                             AppTab.HOME -> strings.home
                             AppTab.SETTINGS -> strings.settings
-                            AppTab.MANAGE -> ""
+                            AppTab.SUBSCRIPTIONS -> ""
                         }
-                        val active = tab == item
+                        val active = tab == item || (tab == AppTab.SUBSCRIPTIONS && item == AppTab.SPEED)
                         val itemColor by animateColorAsState(
                             if (active) Color(0xFF1C2521) else Color.Transparent,
                             tween(180),
@@ -703,397 +685,6 @@ private fun LustApp(
             title = { Text(if (text.contains("добавлена") || text.contains("обновлена")) "Готово" else "Lust") },
             text = { Text(text) },
         )
-    }
-}
-
-@Composable
-private fun HomeScreen(
-    state: VpnSessionState,
-    selected: ServerProfile?,
-    servers: List<ServerProfile>,
-    subscriptions: List<Subscription>,
-    favoriteIds: Set<String>,
-    latencyResults: Map<String, ServerLatencyResult>,
-    latencyTesting: Boolean,
-    loading: Boolean,
-    onConnect: (String) -> Unit,
-    onDisconnect: () -> Unit,
-    onSelect: (ServerProfile) -> Unit,
-    onToggleFavorite: (ServerProfile) -> Unit,
-    onTestLatency: () -> Unit,
-    onAddSubscription: (String, String) -> Unit,
-    onUpdateSubscription: (Subscription) -> Unit,
-    onRemoveSubscription: (Subscription) -> Unit,
-    logEntries: List<LogEntry>,
-    onClearLogs: () -> Unit,
-    onExportLogs: () -> Unit,
-) {
-    var serverQuery by remember { mutableStateOf("") }
-    var serverSort by remember { mutableStateOf(ServerSort.NAME) }
-    var showAddSubscription by remember { mutableStateOf(false) }
-    val subscriptionNames = subscriptions.associate { it.id to it.name }
-    val groups = ServerListPlanner.plan(
-        servers = servers,
-        subscriptionNames = subscriptionNames,
-        favoriteIds = favoriteIds,
-        query = serverQuery,
-        sort = serverSort,
-        latencyMillis = latencyResults.mapValues { it.value.latencyMillis },
-    )
-    val serverCount = servers.size
-
-    val connected = state is VpnSessionState.Connected
-    val busy = state is VpnSessionState.Connecting || state is VpnSessionState.Disconnecting
-    val stateColor = when {
-        connected -> Success
-        busy -> Warning
-        state is VpnSessionState.Error -> Danger
-        else -> Muted
-    }
-    val engineLabel = when (state) {
-        is VpnSessionState.Connecting -> engineName(state.engine)
-        is VpnSessionState.Connected -> engineName(state.engine)
-        is VpnSessionState.Disconnecting -> engineName(state.engine)
-        is VpnSessionState.Error -> state.engine?.let(::engineName) ?: "—"
-        VpnSessionState.Disconnected -> "—"
-    }
-    val activeSubscription = selected?.subscriptionId?.let { id -> subscriptions.firstOrNull { it.id == id } }
-    var clockMillis by remember(state) { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state) {
-        while (state is VpnSessionState.Connected) {
-            clockMillis = System.currentTimeMillis()
-            delay(1_000L)
-        }
-    }
-    val connectionTime = if (state is VpnSessionState.Connected) {
-        formatDuration((clockMillis - state.startedAtEpochMillis).coerceAtLeast(0L))
-    } else {
-        "00:00:00"
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showAddSubscription = true }, enabled = !loading) {
-                    Text("+", color = Accent, fontSize = 25.sp, fontWeight = FontWeight.Light)
-                }
-            }
-        }
-        item {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Время подключения", color = Muted, fontSize = 11.sp)
-                Text(connectionTime, color = ContentPrimary, fontSize = 30.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
-                Spacer(Modifier.height(14.dp))
-                Surface(color = SurfaceRaised, shape = RoundedCornerShape(18.dp)) {
-                    Button(
-                        onClick = { if (connected || busy) onDisconnect() else selected?.let { onConnect(it.config) } },
-                        enabled = selected != null || connected || busy,
-                        modifier = Modifier.padding(11.dp).size(66.dp).semantics {
-                            contentDescription = if (connected || busy) "Отключить VPN" else "Подключить VPN"
-                        },
-                        shape = CircleShape,
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (connected) Success else Accent,
-                            contentColor = Color.White,
-                            disabledContainerColor = Accent.copy(alpha = .45f),
-                            disabledContentColor = Color.White.copy(alpha = .75f),
-                        ),
-                    ) { PowerIcon(Modifier.size(32.dp)) }
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    when {
-                        connected -> "Подключено"
-                        busy -> stateLabel(state)
-                        state is VpnSessionState.Error -> "Ошибка подключения"
-                        else -> "Не подключено"
-                    },
-                    color = stateColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    selected?.name ?: "Выберите сервер",
-                    color = ContentPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    selected?.let { "${it.protocol.uppercase()} · $engineLabel" } ?: "Добавьте подписку, чтобы начать",
-                    color = Muted,
-                    fontSize = 10.sp,
-                )
-            }
-        }
-        item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = SurfaceColor,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, Outline),
-            ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).background(AccentSoft, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-                        Text("↻", color = Accent, fontSize = 20.sp)
-                    }
-                    Column(Modifier.weight(1f).padding(horizontal = 11.dp)) {
-                        Text(activeSubscription?.name ?: "Подписка не выбрана", color = ContentPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("$serverCount серверов · ${subscriptions.size} подписок", color = Muted, fontSize = 10.sp)
-                    }
-                    if (activeSubscription != null) {
-                        TextButton(onClick = { onUpdateSubscription(activeSubscription) }, enabled = !loading) {
-                            Text("ОБНОВИТЬ", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        TextButton(onClick = { showAddSubscription = true }, enabled = !loading) {
-                            Text("ДОБАВИТЬ", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-        item { EmbeddedLogConsole(entries = logEntries, onClear = onClearLogs, onExport = onExportLogs) }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("УЗЛЫ", color = ContentPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onTestLatency, enabled = servers.isNotEmpty() && !latencyTesting) {
-                    Text(if (latencyTesting) "ПРОВЕРКА…" else "ПРОВЕРИТЬ", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                }
-                TextButton(onClick = { showAddSubscription = true }, enabled = !loading) {
-                    Text("+", color = Accent, fontSize = 20.sp)
-                }
-            }
-        }
-        item {
-            OutlinedTextField(
-                value = serverQuery,
-                onValueChange = { serverQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Поиск узла") },
-                shape = RoundedCornerShape(12.dp),
-            )
-            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SortButton("ПО ИМЕНИ", serverSort == ServerSort.NAME) { serverSort = ServerSort.NAME }
-                SortButton("ПО ЗАДЕРЖКЕ", serverSort == ServerSort.LATENCY) { serverSort = ServerSort.LATENCY }
-            }
-        }
-        if (groups.isEmpty()) item {
-            InlineEmptyState(
-                if (servers.isEmpty()) "Серверов пока нет" else "Ничего не найдено",
-                if (servers.isEmpty()) "Добавьте подписку — узлы появятся здесь." else "Измените поисковый запрос.",
-            )
-        }
-        groups.forEach { group ->
-            item(key = "group-${group.id}") {
-                Text(group.name, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-            }
-            items(group.servers, key = { "server-${it.server.id}" }) { planned ->
-                ReferenceServerRow(
-                    planned = planned,
-                    selected = planned.server.id == selected?.id,
-                    onSelect = { onSelect(planned.server) },
-                    onToggleFavorite = { onToggleFavorite(planned.server) },
-                )
-            }
-        }
-        if (subscriptions.isNotEmpty()) item {
-            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("ПОДПИСКИ", color = ContentPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("${subscriptions.size}", color = Muted, fontSize = 11.sp)
-            }
-        }
-        if (subscriptions.isNotEmpty()) {
-            items(subscriptions, key = { "subscription-${it.id}" }) { subscription ->
-                HomeSubscriptionCard(subscription, loading, onUpdateSubscription, onRemoveSubscription)
-            }
-        }
-        item { Spacer(Modifier.height(12.dp)) }
-    }
-    if (showAddSubscription) {
-        AddSubscriptionDialog(onDismiss = { showAddSubscription = false }) { name, url ->
-            showAddSubscription = false
-            onAddSubscription(name, url)
-        }
-    }
-}
-
-@Composable
-private fun PowerIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val strokeWidth = 2.8.dp.toPx()
-        drawLine(
-            color = Color.White,
-            start = Offset(center.x, size.height * .08f),
-            end = Offset(center.x, size.height * .48f),
-            strokeWidth = strokeWidth,
-        )
-        drawArc(
-            color = Color.White,
-            startAngle = -42f,
-            sweepAngle = 264f,
-            useCenter = false,
-            topLeft = Offset(size.width * .14f, size.height * .18f),
-            size = androidx.compose.ui.geometry.Size(size.width * .72f, size.height * .72f),
-            style = Stroke(width = strokeWidth),
-        )
-    }
-}
-
-@Composable
-private fun FavoriteIcon(filled: Boolean, modifier: Modifier = Modifier) {
-    Canvas(modifier.semantics { contentDescription = if (filled) "Убрать из избранного" else "Добавить в избранное" }) {
-        val outer = size.minDimension * .46f
-        val inner = outer * .45f
-        val path = Path()
-        repeat(10) { index ->
-            val radius = if (index % 2 == 0) outer else inner
-            val angle = Math.toRadians((-90 + index * 36).toDouble())
-            val point = Offset(center.x + radius * kotlin.math.cos(angle).toFloat(), center.y + radius * kotlin.math.sin(angle).toFloat())
-            if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
-        }
-        path.close()
-        drawPath(path, if (filled) Warning else Muted, style = if (filled) androidx.compose.ui.graphics.drawscope.Fill else Stroke(width = 2.dp.toPx()))
-    }
-}
-
-@Composable
-private fun CloseIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier.semantics { contentDescription = "Удалить подписку" }) {
-        val inset = size.minDimension * .28f
-        drawLine(Danger, Offset(inset, inset), Offset(size.width - inset, size.height - inset), 2.dp.toPx())
-        drawLine(Danger, Offset(size.width - inset, inset), Offset(inset, size.height - inset), 2.dp.toPx())
-    }
-}
-
-@Composable
-private fun ChevronIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier.semantics { contentDescription = "Выбранный маршрут" }) {
-        val path = Path().apply {
-            moveTo(size.width * .35f, size.height * .2f)
-            lineTo(size.width * .65f, size.height * .5f)
-            lineTo(size.width * .35f, size.height * .8f)
-        }
-        drawPath(path, Accent, style = Stroke(width = 2.dp.toPx()))
-    }
-}
-
-@Composable
-private fun SortButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    OutlinedButton(
-        modifier = Modifier.semantics {
-            this.selected = selected
-            stateDescription = if (selected) "Выбрано" else "Не выбрано"
-        },
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (selected) Accent else Outline),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (selected) Accent else Muted),
-    ) { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-}
-
-@Composable
-private fun ReferenceServerRow(
-    planned: PlannedServer,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    onToggleFavorite: () -> Unit,
-) {
-    val server = planned.server
-    Surface(
-        modifier = Modifier.fillMaxWidth().semantics {
-            this.selected = selected
-            stateDescription = if (selected) "Выбранный сервер" else "Сервер не выбран"
-        }.clickable(onClick = onSelect),
-        color = if (selected) AccentSoft else SurfaceColor,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (selected) Accent.copy(alpha = .65f) else Outline),
-    ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(30.dp).background(if (selected) Accent else SurfaceRaised, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(server.protocol.take(1).uppercase(), color = if (selected) Background else Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(server.name, color = ContentPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${server.protocol.uppercase()} · ${server.address}:${server.port}", color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            planned.latencyMillis?.let { Text("$it мс", color = Success, fontSize = 10.sp) }
-            Box(Modifier.size(34.dp).clickable(onClick = onToggleFavorite), contentAlignment = Alignment.Center) {
-                FavoriteIcon(planned.favorite, Modifier.size(17.dp))
-            }
-            if (selected) ChevronIcon(Modifier.size(16.dp))
-        }
-    }
-}
-
-private fun subscriptionUsageLabel(subscription: Subscription): String {
-    val usage = subscription.usage ?: return if (subscription.updatedAt > 0L) "Обновлено" else "Ожидает обновления"
-    val parts = mutableListOf<String>()
-    usage.usedBytes?.let { used ->
-        val total = usage.totalBytes
-        parts += if (total != null && total > 0L) "${formatBytes(used)} из ${formatBytes(total)}" else "Использовано ${formatBytes(used)}"
-    }
-    usage.expiresAtEpochSeconds?.let { seconds ->
-        parts += "до ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(seconds * 1000L))}"
-    }
-    return parts.joinToString(" · ").ifBlank { "Метаданные недоступны" }
-}
-
-private fun formatBytes(bytes: Long): String {
-    val units = arrayOf("Б", "КБ", "МБ", "ГБ", "ТБ")
-    var value = bytes.toDouble()
-    var unit = 0
-    while (value >= 1024.0 && unit < units.lastIndex) { value /= 1024.0; unit++ }
-    return if (unit == 0) "${bytes} ${units[unit]}" else "%.1f %s".format(value, units[unit])
-}
-
-@Composable
-private fun HomeSubscriptionCard(
-    subscription: Subscription,
-    loading: Boolean,
-    onUpdate: (Subscription) -> Unit,
-    onRemove: (Subscription) -> Unit,
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-        border = BorderStroke(1.dp, Outline),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(subscription.name, color = ContentPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subscriptionUsageLabel(subscription), color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            TextButton(onClick = { onUpdate(subscription) }, enabled = !loading) { Text("ОБНОВИТЬ", color = Accent, fontSize = 10.sp) }
-            TextButton(onClick = { onRemove(subscription) }, enabled = !loading, modifier = Modifier.size(48.dp)) {
-                CloseIcon(Modifier.size(24.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun InlineEmptyState(title: String, text: String) {
-    Surface(color = SurfaceColor, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Outline)) {
-        Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Text(title, color = ContentPrimary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(text, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-        }
     }
 }
 
@@ -1154,16 +745,35 @@ private fun ServersScreen(
 @Composable
 private fun SubscriptionsScreen(
     subscriptions: List<Subscription>, loading: Boolean,
+    onBack: () -> Unit,
     onAdd: (String, String) -> Unit, onUpdate: (Subscription) -> Unit, onRemove: (Subscription) -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ScreenTitle("Подписки", "${subscriptions.size} добавлено", Modifier.weight(1f))
-            Button(onClick = { showAdd = true }, enabled = !loading, shape = RoundedCornerShape(14.dp)) { Text("+ ДОБАВИТЬ") }
+            TextButton(onClick = onBack) {
+                Text("‹", color = Accent, fontSize = 30.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.subscriptions_back), color = Accent)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ScreenTitle(
+                stringResource(R.string.subscriptions_title),
+                stringResource(R.string.subscriptions_count, subscriptions.size),
+                Modifier.weight(1f),
+            )
+            Button(onClick = { showAdd = true }, enabled = !loading, shape = RoundedCornerShape(14.dp)) {
+                Text("+ ${stringResource(R.string.subscriptions_add)}")
+            }
         }
         Spacer(Modifier.height(18.dp))
-        if (subscriptions.isEmpty()) EmptyState("Подписок пока нет", "Вставь URL подписки. Lust загрузит и разберёт серверы автоматически.", "+ ДОБАВИТЬ", { showAdd = true })
+        if (subscriptions.isEmpty()) EmptyState(
+            stringResource(R.string.subscriptions_empty_title),
+            stringResource(R.string.subscriptions_empty_text),
+            stringResource(R.string.subscriptions_add),
+            { showAdd = true },
+        )
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(subscriptions, key = { it.id }) { subscription ->
                 Card(
@@ -1177,8 +787,8 @@ private fun SubscriptionsScreen(
                         Text(subscription.url, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { onUpdate(subscription) }, enabled = !loading) { Text("ОБНОВИТЬ") }
-                            TextButton(onClick = { onRemove(subscription) }, enabled = !loading) { Text("УДАЛИТЬ", color = Danger) }
+                            OutlinedButton(onClick = { onUpdate(subscription) }, enabled = !loading) { Text(stringResource(R.string.subscriptions_update)) }
+                            TextButton(onClick = { onRemove(subscription) }, enabled = !loading) { Text(stringResource(R.string.subscriptions_remove), color = Danger) }
                         }
                     }
                 }

@@ -30,6 +30,14 @@
     <string name="servers_plus">Тариф «Плюс»</string>
     <string name="servers_other">Другие подписки</string>
     <string name="subscriptions_manage">Управление подписками</string>
+    <string name="subscriptions_title">Подписки</string>
+    <string name="subscriptions_count">Добавлено: %1$d</string>
+    <string name="subscriptions_add">Добавить подписку</string>
+    <string name="subscriptions_empty_title">Подписок пока нет</string>
+    <string name="subscriptions_empty_text">Добавьте URL подписки, чтобы автоматически загрузить серверы.</string>
+    <string name="subscriptions_update">Обновить</string>
+    <string name="subscriptions_remove">Удалить</string>
+    <string name="subscriptions_back">Назад к скорости</string>
     <string name="telegram_news">Новости MaxSpeedVPN в Telegram</string>
     <string name="server_ping_all">Проверить задержку всех серверов</string>
     <string name="server_ping">Пинг сервера</string>

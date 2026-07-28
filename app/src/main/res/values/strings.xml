@@ -30,6 +30,14 @@
     <string name="servers_plus">Plus plan</string>
     <string name="servers_other">Other subscriptions</string>
     <string name="subscriptions_manage">Manage subscriptions</string>
+    <string name="subscriptions_title">Subscriptions</string>
+    <string name="subscriptions_count">%1$d added</string>
+    <string name="subscriptions_add">Add subscription</string>
+    <string name="subscriptions_empty_title">No subscriptions yet</string>
+    <string name="subscriptions_empty_text">Add a subscription URL to load its servers automatically.</string>
+    <string name="subscriptions_update">Update</string>
+    <string name="subscriptions_remove">Remove</string>
+    <string name="subscriptions_back">Back to speed</string>
     <string name="telegram_news">MaxSpeedVPN news on Telegram</string>
     <string name="server_ping_all">Check latency for all servers</string>
     <string name="server_ping">Server ping</string>
