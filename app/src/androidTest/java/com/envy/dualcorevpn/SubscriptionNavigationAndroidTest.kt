@@ -10,11 +10,39 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SubscriptionNavigationAndroidTest {
+    @Test
+    fun telegramButtonIsEnabledWhenHttpsHandlerIsInstalled() {
+        ActivityScenario.launch<MainActivity>(
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java),
+        )
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+
+        val telegram = device.wait(Until.findObject(By.desc("Новости MaxSpeedVPN в Telegram")), 2_500)
+            ?: device.wait(Until.findObject(By.desc("MaxSpeedVPN news on Telegram")), 2_500)
+        assertNotNull(telegram)
+        assertTrue(telegram!!.isEnabled)
+    }
+
+    @Test
+    fun emptyHomeOffersSubscriptionManagementAndReturnsToHome() {
+        ActivityScenario.launch<MainActivity>(
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java),
+        )
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+
+        waitForEither(device, "Главная", "Home").click()
+        waitForEither(device, "Управление подписками", "Manage subscriptions").click()
+        assertNotNull(waitForEither(device, "Подписки", "Subscriptions"))
+        waitForEither(device, "Назад", "Back").click()
+        assertNotNull(waitForEither(device, "Коснитесь для подключения", "Tap to connect"))
+    }
+
     @Test
     fun speedManageSubscriptionsOpensDedicatedAddFlowInsteadOfLegacyHome() {
         ActivityScenario.launch<MainActivity>(

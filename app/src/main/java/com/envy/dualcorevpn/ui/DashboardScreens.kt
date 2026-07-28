@@ -45,6 +45,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -221,6 +222,7 @@ internal fun HomeDashboard(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onSelect: (ServerProfile) -> Unit,
+    onManageSubscriptions: () -> Unit,
 ) {
     val strings = dashboardStrings()
     val connected = state is VpnSessionState.Connected
@@ -244,6 +246,17 @@ internal fun HomeDashboard(
             )
             Spacer(Modifier.height(26.dp))
             ServerSlider(selected, servers, subscriptions, onSelect)
+            if (subscriptions.isEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onManageSubscriptions,
+                    border = BorderStroke(1.dp, Mint.copy(alpha = .72f)),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Text(strings.manageSubscriptions, color = Mint, fontWeight = FontWeight.Bold)
+                }
+            }
             Spacer(Modifier.height(8.dp))
         }
     }

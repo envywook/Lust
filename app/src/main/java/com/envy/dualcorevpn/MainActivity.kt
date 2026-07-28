@@ -14,17 +14,22 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -495,6 +500,12 @@ private fun LustTheme(content: @Composable () -> Unit) {
 
 private enum class AppTab { SPEED, HOME, SETTINGS, SUBSCRIPTIONS }
 
+private fun AppTab.navigationOrder(): Int = when (this) {
+    AppTab.SPEED, AppTab.SUBSCRIPTIONS -> 0
+    AppTab.HOME -> 1
+    AppTab.SETTINGS -> 2
+}
+
 @Composable
 private fun AppTabIcon(tab: AppTab, selected: Boolean) {
     val (regular, filled) = when (tab) {
@@ -556,6 +567,7 @@ private fun LustApp(
     val vpnState by VpnSessionStore.state.collectAsState()
     val haptic = LocalHapticFeedback.current
     var tab by remember { mutableStateOf(AppTab.HOME) }
+    var subscriptionsParent by remember { mutableStateOf(AppTab.SPEED) }
     val subscriptions = repository.subscriptions()
     val servers = repository.servers()
     val selected = servers.firstOrNull { it.id == repository.selectedServerId() } ?: servers.firstOrNull()
@@ -565,7 +577,9 @@ private fun LustApp(
             AnimatedContent(
                 targetState = tab,
                 transitionSpec = {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                    val direction = if (targetState.navigationOrder() >= initialState.navigationOrder()) 1 else -1
+                    (slideInHorizontally(tween(280)) { width -> direction * width / 5 } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally(tween(220)) { width -> -direction * width / 6 } + fadeOut(tween(160)))
                 },
                 label = "mainTab",
             ) { activeTab ->
@@ -578,6 +592,10 @@ private fun LustApp(
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                     onSelect = onSelect,
+                    onManageSubscriptions = {
+                        subscriptionsParent = AppTab.HOME
+                        tab = AppTab.SUBSCRIPTIONS
+                    },
                 )
                 AppTab.SPEED -> SpeedDashboard(
                     state = vpnState,
@@ -590,12 +608,15 @@ private fun LustApp(
                     onTestLatency = onTestLatency,
                     onTestServerLatency = onTestServerLatency,
                     onSelect = onSelect,
-                    onManageSubscriptions = { tab = AppTab.SUBSCRIPTIONS },
+                    onManageSubscriptions = {
+                        subscriptionsParent = AppTab.SPEED
+                        tab = AppTab.SUBSCRIPTIONS
+                    },
                 )
                 AppTab.SUBSCRIPTIONS -> SubscriptionsScreen(
                     subscriptions = subscriptions,
                     loading = loading,
-                    onBack = { tab = AppTab.SPEED },
+                    onBack = { tab = subscriptionsParent },
                     onAdd = onAddSubscription,
                     onUpdate = onUpdateSubscription,
                     onRemove = onRemoveSubscription,
@@ -624,43 +645,48 @@ private fun LustApp(
                 modifier = Modifier.fillMaxWidth().height(72.dp),
             ) {
                 val strings = dashboardStrings()
-                Row(Modifier.fillMaxSize().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(AppTab.SPEED, AppTab.HOME, AppTab.SETTINGS).forEach { item ->
-                        val label = when (item) {
-                            AppTab.SPEED -> strings.speed
-                            AppTab.HOME -> strings.home
-                            AppTab.SETTINGS -> strings.settings
-                            AppTab.SUBSCRIPTIONS -> ""
-                        }
-                        val active = tab == item || (tab == AppTab.SUBSCRIPTIONS && item == AppTab.SPEED)
-                        val itemColor by animateColorAsState(
-                            if (active) Color(0xFF1C2521) else Color.Transparent,
-                            tween(180),
-                            label = "navColor",
-                        )
-                        val itemBorder by animateColorAsState(
-                            if (active) Color(0x8CA6F3D1) else Color.Transparent,
-                            tween(180),
-                            label = "navBorder",
-                        )
-                        Surface(
-                            modifier = Modifier.weight(1f).fillMaxHeight().clickable {
-                                if (tab != item) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    tab = item
-                                }
-                            },
-                            shape = RoundedCornerShape(18.dp),
-                            color = itemColor,
-                            border = BorderStroke(1.dp, itemBorder),
-                        ) {
-                            Column(
-                                Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
+                BoxWithConstraints(Modifier.fillMaxSize().padding(6.dp)) {
+                    val destinations = listOf(AppTab.SPEED, AppTab.HOME, AppTab.SETTINGS)
+                    val activeDestination = if (tab == AppTab.SUBSCRIPTIONS) subscriptionsParent else tab
+                    val activeIndex = destinations.indexOf(activeDestination).coerceAtLeast(0)
+                    val itemWidth = (maxWidth - 8.dp) / 3
+                    val indicatorX by animateDpAsState(
+                        targetValue = (itemWidth + 4.dp) * activeIndex,
+                        animationSpec = tween(320),
+                        label = "navIndicator",
+                    )
+                    Box(
+                        Modifier.offset(x = indicatorX).width(itemWidth).fillMaxHeight()
+                            .background(Color(0xFF1C2521), RoundedCornerShape(18.dp))
+                            .border(1.dp, Color(0x8CA6F3D1), RoundedCornerShape(18.dp)),
+                    )
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        destinations.forEach { item ->
+                            val label = when (item) {
+                                AppTab.SPEED -> strings.speed
+                                AppTab.HOME -> strings.home
+                                AppTab.SETTINGS -> strings.settings
+                                AppTab.SUBSCRIPTIONS -> ""
+                            }
+                            val active = activeDestination == item
+                            Surface(
+                                modifier = Modifier.weight(1f).fillMaxHeight().clickable {
+                                    if (tab != item) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        tab = item
+                                    }
+                                },
+                                shape = RoundedCornerShape(18.dp),
+                                color = Color.Transparent,
                             ) {
-                                AppTabIcon(item, active)
-                                Text(label, color = if (active) Color(0xFFA6F3D1) else Color(0xFFA0A5A2), fontSize = 10.sp, maxLines = 1)
+                                Column(
+                                    Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    AppTabIcon(item, active)
+                                    Text(label, color = if (active) Color(0xFFA6F3D1) else Color(0xFFA0A5A2), fontSize = 10.sp, maxLines = 1)
+                                }
                             }
                         }
                     }
