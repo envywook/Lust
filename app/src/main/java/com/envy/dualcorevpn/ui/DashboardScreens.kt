@@ -10,9 +10,12 @@ import androidx.compose.animation.AnimatedContent
 
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -359,7 +362,6 @@ private fun ServerSlider(
 ) {
     val strings = dashboardStrings()
     val haptic = LocalHapticFeedback.current
-    val description = subscriptions.firstOrNull { it.id == selected?.subscriptionId }?.name.orEmpty()
     Card(
         modifier = Modifier.fillMaxWidth().height(154.dp),
         shape = RoundedCornerShape(24.dp),
@@ -370,61 +372,75 @@ private fun ServerSlider(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(strings.noServers, color = TextMuted, fontSize = 13.sp) }
         } else {
             val selectedIndex = servers.indexOfFirst { it.id == selected?.id }.coerceAtLeast(0)
-            val visible: List<ServerProfile?> = (-2..2).map { offset ->
-                if (servers.size >= 5) servers[(selectedIndex + offset).floorMod(servers.size)]
-                else servers.getOrNull(selectedIndex + offset)
+            var slideDirection by remember { mutableStateOf(1) }
+            fun select(server: ServerProfile, direction: Int) {
+                slideDirection = direction
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSelect(server)
             }
             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 13.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(76.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("‹", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { onSelect(servers[(selectedIndex - 1).floorMod(servers.size)]) })
-                    visible.forEach { server ->
-                        if (server == null) {
-                            Spacer(Modifier.size(40.dp))
-                            return@forEach
-                        }
-                        val isSelected = server.id == selected?.id
-                        val flagSize by animateDpAsState(if (isSelected) 70.dp else 40.dp, tween(220), label = "flagSize")
-                        val flagAlpha by animateFloatAsState(if (isSelected) 1f else .62f, tween(180), label = "flagAlpha")
-                        Box(
-                            modifier = Modifier
-                                .size(flagSize)
-                                .alpha(flagAlpha)
-                                .then(if (isSelected) Modifier.shadow(14.dp, CircleShape, ambientColor = Mint, spotColor = Mint) else Modifier)
-                                .clip(CircleShape)
-                                .background(PanelHigh)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onSelect(server)
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) { Text(serverFlag(server), fontSize = if (isSelected) 38.sp else 26.sp) }
+                AnimatedContent(
+                    targetState = selectedIndex,
+                    transitionSpec = {
+                        (slideInHorizontally(tween(500, easing = FastOutSlowInEasing)) { slideDirection * it } + fadeIn(tween(240, delayMillis = 100))) togetherWith
+                            (slideOutHorizontally(tween(500, easing = FastOutSlowInEasing)) { -slideDirection * it } + fadeOut(tween(180)))
+                    },
+                    label = "serverCarousel",
+                ) { centerIndex ->
+                    val visible: List<ServerProfile?> = (-2..2).map { offset ->
+                        if (servers.size >= 5) servers[(centerIndex + offset).floorMod(servers.size)]
+                        else servers.getOrNull(centerIndex + offset)
                     }
-                    Text("›", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { onSelect(servers[(selectedIndex + 1).floorMod(servers.size)]) })
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(76.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("‹", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { select(servers[(centerIndex - 1).floorMod(servers.size)], -1) })
+                        visible.forEachIndexed { visualIndex, server ->
+                            if (server == null) {
+                                Spacer(Modifier.size(40.dp))
+                                return@forEachIndexed
+                            }
+                            val isSelected = visualIndex == 2
+                            val flagSize by animateDpAsState(if (isSelected) 70.dp else 40.dp, tween(240), label = "flagSize")
+                            val flagAlpha by animateFloatAsState(if (isSelected) 1f else .62f, tween(220), label = "flagAlpha")
+                            Box(
+                                modifier = Modifier
+                                    .size(flagSize)
+                                    .alpha(flagAlpha)
+                                    .then(if (isSelected) Modifier.shadow(14.dp, CircleShape, ambientColor = Mint, spotColor = Mint) else Modifier)
+                                    .clip(CircleShape)
+                                    .background(PanelHigh)
+                                    .clickable { select(server, if (visualIndex < 2) -1 else 1) },
+                                contentAlignment = Alignment.Center,
+                            ) { Text(serverFlag(server), fontSize = if (isSelected) 38.sp else 26.sp) }
+                        }
+                        Text("›", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { select(servers[(centerIndex + 1).floorMod(servers.size)], 1) })
+                    }
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        selected?.let { localizedServerName(it.name) } ?: strings.selectServer,
-                        color = TextMain,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (description.isNotBlank()) Text(
-                        description,
-                        color = Mint,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                        modifier = Modifier.weight(1f),
-                    )
+                AnimatedContent(
+                    targetState = selected?.id,
+                    transitionSpec = {
+                        (fadeIn(tween(180, delayMillis = 180)) + slideInHorizontally(tween(360, easing = FastOutSlowInEasing)) { slideDirection * it / 2 }) togetherWith
+                            (fadeOut(tween(140)) + slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -slideDirection * it / 2 })
+                    },
+                    label = "serverDetails",
+                ) { selectedId ->
+                    val current = servers.firstOrNull { it.id == selectedId }
+                    val currentDescription = subscriptions.firstOrNull { it.id == current?.subscriptionId }?.name.orEmpty()
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            current?.let { localizedServerName(it.name) } ?: strings.selectServer,
+                            color = TextMain,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (currentDescription.isNotBlank()) Text(currentDescription, color = Mint, fontSize = 11.sp, maxLines = 1)
+                    }
                 }
             }
         }
@@ -496,9 +512,24 @@ internal fun SpeedDashboard(
 }
 
 internal fun speedScaleMbps(megabitsPerSecond: Double): Int = when {
+    megabitsPerSecond <= 1.0 -> 1
+    megabitsPerSecond <= 10.0 -> 10
     megabitsPerSecond <= 100.0 -> 100
     megabitsPerSecond <= 500.0 -> 500
     else -> 1_000
+}
+
+internal fun formatSpeedMbps(megabitsPerSecond: Double, scale: Int): String = when {
+    megabitsPerSecond == 0.0 -> "0"
+    scale <= 1 -> "%.2f".format(java.util.Locale.ROOT, megabitsPerSecond)
+    scale <= 10 -> "%.1f".format(java.util.Locale.ROOT, megabitsPerSecond)
+    else -> "%.0f".format(java.util.Locale.ROOT, megabitsPerSecond)
+}
+
+internal fun formatSpeedTick(value: Double, scale: Int): String = when {
+    scale <= 1 && (value == 0.0 || value == 1.0) -> "%.0f".format(java.util.Locale.ROOT, value)
+    scale <= 1 -> "%.1f".format(java.util.Locale.ROOT, value)
+    else -> "%.0f".format(java.util.Locale.ROOT, value)
 }
 
 @Composable
@@ -555,11 +586,11 @@ private fun SpeedGauge(bytesPerSecond: Long, strings: DashboardStrings) {
                     val inner = outer - if (index % 2 == 0) 10.dp.toPx() else 6.dp.toPx()
                     drawLine(TextMuted, Offset(center.x + cos(angle).toFloat() * inner, center.y + sin(angle).toFloat() * inner), Offset(center.x + cos(angle).toFloat() * outer, center.y + sin(angle).toFloat() * outer), 1.dp.toPx())
                     if (index % 2 == 0) {
-                        val value = scale * index / 10
+                        val value = scale * index / 10.0
                         val labelRadius = radius - 42.dp.toPx()
                         val x = center.x + cos(angle).toFloat() * labelRadius
                         val y = center.y + sin(angle).toFloat() * labelRadius - (paint.ascent() + paint.descent()) / 2
-                        drawContext.canvas.nativeCanvas.drawText(value.toString(), x, y, paint)
+                        drawContext.canvas.nativeCanvas.drawText(formatSpeedTick(value, scale), x, y, paint)
                     }
                 }
                 val needleAngle = Math.toRadians((180 + 180 * progress).toDouble())
@@ -570,7 +601,7 @@ private fun SpeedGauge(bytesPerSecond: Long, strings: DashboardStrings) {
             }
             Column(Modifier.align(Alignment.BottomCenter), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (running) CircularProgressIndicator(Modifier.size(20.dp), color = Mint, strokeWidth = 2.dp)
-                Text(mbps.roundToInt().toString(), color = TextMain, fontSize = 37.sp, fontWeight = FontWeight.Bold)
+                Text(formatSpeedMbps(mbps, scale), color = TextMain, fontSize = 37.sp, fontWeight = FontWeight.Bold)
                 Text(error ?: "Mbps · $phaseLabel", color = if (error == null) TextMuted else Color(0xFFFF7A7A), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -717,15 +748,34 @@ private fun localizedServerName(name: String): String = when (name.trim().lowerc
     else -> name
 }
 
-private fun serverFlag(server: ServerProfile): String {
-    val value = "${server.name} ${server.address}".lowercase()
+private fun serverFlag(server: ServerProfile): String = serverFlagFromName(server.name)
+
+internal fun serverFlagFromName(name: String): String {
+    val value = name.lowercase()
+    fun matches(vararg aliases: String): Boolean = aliases.any { alias ->
+        if (alias.any(Char::isLetter)) {
+            Regex("(^|[^\\p{L}])${Regex.escape(alias)}([^\\p{L}]|$)").containsMatchIn(value)
+        } else {
+            value.contains(alias)
+        }
+    }
     return when {
-        listOf("canada", " ca ", "🇨🇦").any(value::contains) -> "🇨🇦"
-        listOf("germany", "deutsch", " de ", "🇩🇪").any(value::contains) -> "🇩🇪"
-        listOf("ireland", " ie ", "🇮🇪").any(value::contains) -> "🇮🇪"
-        listOf("china", " cn ", "🇨🇳").any(value::contains) -> "🇨🇳"
-        listOf("united states", "usa", " us ", "🇺🇸").any(value::contains) -> "🇺🇸"
-        listOf("russia", " ru ", "🇷🇺").any(value::contains) -> "🇷🇺"
+        matches("🇦🇹", "austria", "австрия", "österreich", "vienna", "вена", "at") -> "🇦🇹"
+        matches("🇨🇦", "canada", "канада", "toronto", "торонто", "ca") -> "🇨🇦"
+        matches("🇩🇪", "germany", "германия", "deutschland", "берлин", "berlin", "de") -> "🇩🇪"
+        matches("🇮🇪", "ireland", "ирландия", "dublin", "дублин", "ie") -> "🇮🇪"
+        matches("🇨🇳", "china", "китай", "beijing", "пекин", "cn") -> "🇨🇳"
+        matches("🇺🇸", "united states", "сша", "usa", "new york", "нью-йорк", "us") -> "🇺🇸"
+        matches("🇷🇺", "russia", "россия", "moscow", "москва", "ru") -> "🇷🇺"
+        matches("🇬🇧", "united kingdom", "великобритания", "англия", "london", "лондон", "uk", "gb") -> "🇬🇧"
+        matches("🇳🇱", "netherlands", "нидерланды", "holland", "голландия", "amsterdam", "амстердам", "nl") -> "🇳🇱"
+        matches("🇫🇷", "france", "франция", "paris", "париж", "fr") -> "🇫🇷"
+        matches("🇫🇮", "finland", "финляндия", "helsinki", "хельсинки", "fi") -> "🇫🇮"
+        matches("🇸🇪", "sweden", "швеция", "stockholm", "стокгольм", "se") -> "🇸🇪"
+        matches("🇵🇱", "poland", "польша", "warsaw", "варшава", "pl") -> "🇵🇱"
+        matches("🇨🇭", "switzerland", "швейцария", "zurich", "zürich", "цюрих", "ch") -> "🇨🇭"
+        matches("🇯🇵", "japan", "япония", "tokyo", "токио", "jp") -> "🇯🇵"
+        matches("🇸🇬", "singapore", "сингапур", "sg") -> "🇸🇬"
         else -> "🌐"
     }
 }

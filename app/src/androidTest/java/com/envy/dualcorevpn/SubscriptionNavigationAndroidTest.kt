@@ -11,11 +11,21 @@ import androidx.test.uiautomator.Until
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SubscriptionNavigationAndroidTest {
+    @Before
+    fun clearSubscriptionState() {
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSharedPreferences("subscriptions", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
+
     @Test
     fun telegramButtonIsEnabledWhenHttpsHandlerIsInstalled() {
         ActivityScenario.launch<MainActivity>(

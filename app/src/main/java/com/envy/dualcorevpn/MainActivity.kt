@@ -789,8 +789,23 @@ private fun SubscriptionsScreen(
                 stringResource(R.string.subscriptions_count, subscriptions.size),
                 Modifier.weight(1f),
             )
-            Button(onClick = { showAdd = true }, enabled = !loading, shape = RoundedCornerShape(14.dp)) {
-                Text("+ ${stringResource(R.string.subscriptions_add)}")
+            val addSubscriptionLabel = stringResource(R.string.subscriptions_add)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .semantics { contentDescription = addSubscriptionLabel }
+                    .clickable(enabled = !loading) { showAdd = true },
+            ) {
+                Surface(
+                    color = Accent,
+                    shape = CircleShape,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("+", color = Color.Black, fontSize = 24.sp, lineHeight = 24.sp)
+                    }
+                }
             }
         }
         Spacer(Modifier.height(18.dp))
