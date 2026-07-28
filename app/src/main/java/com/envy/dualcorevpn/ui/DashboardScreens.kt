@@ -15,6 +15,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -24,9 +25,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -101,6 +106,7 @@ import com.envy.dualcorevpn.subscription.Subscription
 import java.net.URI
 import java.util.Locale
 import kotlin.math.cos
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
@@ -248,18 +254,7 @@ internal fun HomeDashboard(
                 onClick = { if (connected || busy) onDisconnect() else selected?.let { onConnect(it.config) } },
             )
             Spacer(Modifier.height(26.dp))
-            ServerSlider(selected, servers, subscriptions, onSelect)
-            if (subscriptions.isEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onManageSubscriptions,
-                    border = BorderStroke(1.dp, Mint.copy(alpha = .72f)),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) {
-                    Text(strings.manageSubscriptions, color = Mint, fontWeight = FontWeight.Bold)
-                }
-            }
+            ServerSlider(selected, servers, subscriptions, onSelect, onManageSubscriptions)
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -359,79 +354,101 @@ private fun ServerSlider(
     servers: List<ServerProfile>,
     subscriptions: List<Subscription>,
     onSelect: (ServerProfile) -> Unit,
+    onManageSubscriptions: () -> Unit,
 ) {
     val strings = dashboardStrings()
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     Card(
         modifier = Modifier.fillMaxWidth().height(154.dp),
         shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.dp, Border),
+        border = BorderStroke(1.dp, if (servers.isEmpty()) Mint.copy(alpha = .62f) else Border),
         colors = CardDefaults.cardColors(containerColor = Panel),
     ) {
         if (servers.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(strings.noServers, color = TextMuted, fontSize = 13.sp) }
+            Box(
+                modifier = Modifier.fillMaxSize().clickable(onClick = onManageSubscriptions),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier.size(46.dp).background(Mint, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("+", color = Bg, fontSize = 30.sp, fontWeight = FontWeight.Medium) }
+                    Spacer(Modifier.height(12.dp))
+                    Text(strings.noServers, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         } else {
             val selectedIndex = servers.indexOfFirst { it.id == selected?.id }.coerceAtLeast(0)
-            var slideDirection by remember { mutableStateOf(1) }
-            fun select(server: ServerProfile, direction: Int) {
-                slideDirection = direction
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onSelect(server)
-            }
-            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 13.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                AnimatedContent(
-                    targetState = selectedIndex,
-                    transitionSpec = {
-                        (slideInHorizontally(tween(500, easing = FastOutSlowInEasing)) { slideDirection * it } + fadeIn(tween(240, delayMillis = 100))) togetherWith
-                            (slideOutHorizontally(tween(500, easing = FastOutSlowInEasing)) { -slideDirection * it } + fadeOut(tween(180)))
-                    },
-                    label = "serverCarousel",
-                ) { centerIndex ->
-                    val visible: List<ServerProfile?> = (-2..2).map { offset ->
-                        if (servers.size >= 5) servers[(centerIndex + offset).floorMod(servers.size)]
-                        else servers.getOrNull(centerIndex + offset)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(76.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("‹", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { select(servers[(centerIndex - 1).floorMod(servers.size)], -1) })
-                        visible.forEachIndexed { visualIndex, server ->
-                            if (server == null) {
-                                Spacer(Modifier.size(40.dp))
-                                return@forEachIndexed
-                            }
-                            val isSelected = visualIndex == 2
-                            val flagSize by animateDpAsState(if (isSelected) 70.dp else 40.dp, tween(240), label = "flagSize")
-                            val flagAlpha by animateFloatAsState(if (isSelected) 1f else .62f, tween(220), label = "flagAlpha")
-                            Box(
-                                modifier = Modifier
-                                    .size(flagSize)
-                                    .alpha(flagAlpha)
-                                    .then(if (isSelected) Modifier.shadow(14.dp, CircleShape, ambientColor = Mint, spotColor = Mint) else Modifier)
-                                    .clip(CircleShape)
-                                    .background(PanelHigh)
-                                    .clickable { select(server, if (visualIndex < 2) -1 else 1) },
-                                contentAlignment = Alignment.Center,
-                            ) { Text(serverFlag(server), fontSize = if (isSelected) 38.sp else 26.sp) }
-                        }
-                        Text("›", color = TextMuted, fontSize = 28.sp, modifier = Modifier.clickable { select(servers[(centerIndex + 1).floorMod(servers.size)], 1) })
+            val dragOffset = remember { Animatable(0f) }
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 13.dp),
+            ) {
+                val slotWidthPx = constraints.maxWidth / 3f
+
+                fun move(step: Int) {
+                    if (step == 0 || servers.size < 2 || dragOffset.isRunning) return
+                    scope.launch {
+                        val target = -step * slotWidthPx
+                        dragOffset.animateTo(target, tween(280, easing = FastOutSlowInEasing))
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelect(servers[(selectedIndex + step).floorMod(servers.size)])
+                        dragOffset.snapTo(0f)
                     }
                 }
-                AnimatedContent(
-                    targetState = selected?.id,
-                    transitionSpec = {
-                        (fadeIn(tween(180, delayMillis = 180)) + slideInHorizontally(tween(360, easing = FastOutSlowInEasing)) { slideDirection * it / 2 }) togetherWith
-                            (fadeOut(tween(140)) + slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -slideDirection * it / 2 })
-                    },
-                    label = "serverDetails",
-                ) { selectedId ->
-                    val current = servers.firstOrNull { it.id == selectedId }
-                    val currentDescription = subscriptions.firstOrNull { it.id == current?.subscriptionId }?.name.orEmpty()
+
+                val dragState = rememberDraggableState { delta ->
+                    scope.launch {
+                        dragOffset.snapTo((dragOffset.value + delta).coerceIn(-slotWidthPx, slotWidthPx))
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxSize().draggable(
+                        state = dragState,
+                        orientation = Orientation.Horizontal,
+                        enabled = servers.size > 1,
+                        onDragStopped = { velocity ->
+                            val step = carouselStep(dragOffset.value, velocity, slotWidthPx)
+                            if (step == 0) scope.launch {
+                                dragOffset.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                            } else move(step)
+                        },
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(Modifier.fillMaxWidth().height(58.dp)) {
+                        (if (servers.size == 1) listOf(0) else (-2..2).toList()).forEach { relative ->
+                            val server = servers[(selectedIndex + relative).floorMod(servers.size)]
+                            Box(
+                                modifier = Modifier.align(Alignment.Center).size(54.dp).graphicsLayer {
+                                    val x = relative * slotWidthPx + dragOffset.value
+                                    translationX = x
+                                    val distance = (abs(x) / slotWidthPx).coerceIn(0f, 1f)
+                                    val scale = 1f - distance * .26f
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = 1f - distance * .58f
+                                }.clickable { move(relative.coerceIn(-1, 1)) },
+                                contentAlignment = Alignment.Center,
+                            ) { Text(serverFlag(server), fontSize = 34.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        IconButton(onClick = { move(-1) }, enabled = servers.size > 1, modifier = Modifier.size(28.dp)) {
+                            Text("‹", color = TextMuted, fontSize = 26.sp)
+                        }
+                        IconButton(onClick = { move(1) }, enabled = servers.size > 1, modifier = Modifier.size(28.dp)) {
+                            Text("›", color = TextMuted, fontSize = 26.sp)
+                        }
+                    }
+                    val current = servers[selectedIndex]
+                    val currentDescription = subscriptions.firstOrNull { it.id == current.subscriptionId }?.name.orEmpty()
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(
-                            current?.let { localizedServerName(it.name) } ?: strings.selectServer,
+                            localizedServerName(current.name),
                             color = TextMain,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
@@ -444,6 +461,17 @@ private fun ServerSlider(
                 }
             }
         }
+    }
+}
+
+internal fun carouselStep(offsetPx: Float, velocityPxPerSecond: Float, slotWidthPx: Float): Int {
+    if (slotWidthPx <= 0f) return 0
+    val swipedLeft = offsetPx <= -slotWidthPx * .22f || velocityPxPerSecond <= -650f
+    val swipedRight = offsetPx >= slotWidthPx * .22f || velocityPxPerSecond >= 650f
+    return when {
+        swipedLeft -> 1
+        swipedRight -> -1
+        else -> 0
     }
 }
 

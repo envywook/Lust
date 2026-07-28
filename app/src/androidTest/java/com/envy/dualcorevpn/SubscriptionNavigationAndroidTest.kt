@@ -47,7 +47,11 @@ class SubscriptionNavigationAndroidTest {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
         waitForEither(device, "Главная", "Home").click()
-        waitForEither(device, "Управление подписками", "Manage subscriptions").click()
+        val add = waitForEither(device, "Добавить подписку", "Add subscription")
+        assertNotNull(add)
+        assertTrue(device.findObject(By.textContains("в настройках")) == null)
+        assertTrue(device.findObject(By.textContains("in Settings")) == null)
+        add.click()
         assertNotNull(waitForEither(device, "Подписки", "Subscriptions"))
         waitForEither(device, "Назад", "Back").click()
         assertNotNull(waitForEither(device, "Коснитесь для подключения", "Tap to connect"))

@@ -22,7 +22,7 @@
     <string name="connection_tap_disconnect">Нажмите, чтобы отключиться</string>
     <string name="server_select">Выберите сервер</string>
     <string name="server_optimal">Оптимальный сервер</string>
-    <string name="server_empty">Добавьте подписку в настройках</string>
+    <string name="server_empty">Добавить подписку</string>
     <string name="speed_title">Скорость</string>
     <string name="speed_current_download">Текущая загрузка</string>
     <string name="servers_title">Серверы</string>

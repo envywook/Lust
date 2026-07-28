@@ -22,7 +22,7 @@
     <string name="connection_tap_disconnect">Tap to disconnect</string>
     <string name="server_select">Select a server</string>
     <string name="server_optimal">Optimal server</string>
-    <string name="server_empty">Add a subscription in Settings</string>
+    <string name="server_empty">Add subscription</string>
     <string name="speed_title">Speed</string>
     <string name="speed_current_download">Current download</string>
     <string name="servers_title">Servers</string>

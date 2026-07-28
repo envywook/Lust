@@ -19,8 +19,8 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 18
-        versionName = "0.1.17-alpha"
+        versionCode = 19
+        versionName = "0.1.18-alpha"
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"5c9fb76e8a42eb4fecba7206fa20f35f54c78585d416b233ea77fcfbd343add6\"")
         buildConfigField("String", "MAXSPEED_TELEGRAM_URL", buildConfigString(maxSpeedTelegramUrl.get()))
         buildConfigField("String", "MAXSPEED_SUBSCRIPTION_HOSTS", buildConfigString(maxSpeedSubscriptionHosts.get()))
