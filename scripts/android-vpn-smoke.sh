@@ -129,7 +129,16 @@ fi
 "$ADB" logcat -c
 "$ADB" shell am force-stop "$PACKAGE"
 start_app
-wait_for_ui_label "Подключить VPN"
+if has_ui_label "Tap to connect"; then
+  connect_label="Tap to connect"
+  connected_label="Connected"
+  disconnect_label="Tap to disconnect"
+else
+  connect_label="Нажмите, чтобы подключиться"
+  connected_label="Подключено"
+  disconnect_label="Нажмите, чтобы отключиться"
+  wait_for_ui_label "$connect_label"
+fi
 
 expected_engine="${EXPECT_ENGINE:-XRAY}"
 settings_xml="$("$ADB" exec-out run-as "$PACKAGE" cat shared_prefs/vpn_settings.xml 2>/dev/null || true)"
@@ -138,8 +147,8 @@ configured_engine="${configured_engine:-XRAY}"
 [[ "$configured_engine" == "$expected_engine" ]] || fail "configured engine is $configured_engine, expected $expected_engine"
 
 for cycle in 1 2; do
-  click_ui_label "Подключить VPN"
-  wait_for_ui_label "Подключено"
+  click_ui_label "$connect_label"
+  wait_for_ui_label "$connected_label"
   wait_for_vpn
 
   runtime_log="$("$ADB" exec-out run-as "$PACKAGE" cat files/logs/lust.log 2>/dev/null || true)"
@@ -166,10 +175,10 @@ for cycle in 1 2; do
     $dns_ok || fail "DNS resolution failed in cycle $cycle"
   fi
 
-  click_ui_label "Отключить VPN"
+  click_ui_label "$disconnect_label"
   wait_for_no_tun
   start_app
-  wait_for_ui_label "Подключить VPN"
+  wait_for_ui_label "$connect_label"
   if [[ "${EXPECT_ENGINE:-XRAY}" == "SING_BOX" ]] && "$ADB" shell pidof libsingbox.so >/dev/null 2>&1; then
     fail "sing-box subprocess remained after disconnect in cycle $cycle"
   fi

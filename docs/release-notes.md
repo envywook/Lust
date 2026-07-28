@@ -17,7 +17,7 @@
 
 ## Проверка
 
-- 95 unit-тестов, Android lint без ошибок и пять release APK;
+- 96 unit-тестов, Android lint без ошибок и пять release APK;
 - API 34 RU/EN: основные вкладки, fixed header, mass ping, long-press popup и download → upload;
 - ABI и universal APK проверены по versionName/versionCode, SHA-256 и постоянной release-подписи Lust.
 

@@ -76,4 +76,13 @@ class MieruDeepLinkTest {
             "mieru://u:p@example.com:443?v=1&v=1&transport=tcp&mtu=1400&mux=middle",
         ).forEach { source -> assertThrows(IllegalArgumentException::class.java) { MieruDeepLink.parse(source) } }
     }
+
+    @Test
+    fun `rejects paths and empty query segments`() {
+        listOf(
+            "mieru://u:p@example.com:443/unexpected?v=1&transport=tcp&mtu=1400&mux=middle",
+            "mieru://u:p@example.com:443?v=1&transport=tcp&mtu=1400&mux=middle&",
+            "mieru://u:p@example.com:443?v=1&transport=tcp&&mtu=1400&mux=middle",
+        ).forEach { source -> assertThrows(IllegalArgumentException::class.java) { MieruDeepLink.parse(source) } }
+    }
 }

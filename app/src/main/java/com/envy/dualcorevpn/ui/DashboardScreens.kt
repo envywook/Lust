@@ -312,7 +312,10 @@ private fun ConnectionControl(state: VpnSessionState, enabled: Boolean, onClick:
             modifier = Modifier.size(178.dp)
                 .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
                 .background(Brush.radialGradient(listOf(Color(0xFF1B201E), PanelHigh)), CircleShape)
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics {
+                    contentDescription = if (connected || busy) strings.disconnectHint else strings.connectHint
+                },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {

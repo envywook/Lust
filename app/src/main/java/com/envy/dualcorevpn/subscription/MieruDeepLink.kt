@@ -32,6 +32,7 @@ object MieruDeepLink {
         require(source.length <= 4_096) { "Mieru URI is too long" }
         val uri = URI(source)
         require(uri.scheme.equals("mieru", ignoreCase = true)) { "Unsupported Mieru URI scheme" }
+        require(uri.rawPath.isNullOrEmpty()) { "Mieru URI path is not supported" }
         val host = uri.host?.takeIf(String::isNotBlank) ?: throw IllegalArgumentException("Mieru host is required")
         val port = uri.port
         require(port in 1..65535) { "Mieru port must be between 1 and 65535" }
@@ -78,7 +79,9 @@ object MieruDeepLink {
     }
 
     private fun parseQuery(rawQuery: String?): Map<String, String> {
-        val pairs = rawQuery.orEmpty().split('&').filter(String::isNotBlank).map { part ->
+        val segments = rawQuery?.split('&').orEmpty()
+        require(segments.none(String::isBlank)) { "Mieru URI contains an empty query parameter" }
+        val pairs = segments.map { part ->
             val pair = part.split('=', limit = 2)
             require(pair.size == 2 && pair[0].isNotBlank()) { "Invalid Mieru query parameter" }
             decode(pair[0]).lowercase() to decode(pair[1])
