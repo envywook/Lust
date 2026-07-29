@@ -1,5 +1,6 @@
 package com.envy.dualcorevpn.subscription
 
+import com.envy.dualcorevpn.server.SmartConnectPlanner
 data class SubscriptionUpdateResult(
     val subscription: Subscription,
     val importedCount: Int,
@@ -30,10 +31,18 @@ object SubscriptionRefreshPlanner {
             .filterNot { it.id == subscription.id } + updated
         val nextServers = servers
             .filterNot { it.subscriptionId == subscription.id } + report.profiles
+        val selectedBeforeRefresh = servers.firstOrNull { it.id == selectedServerId }
+        val replacement = selectedBeforeRefresh?.let { previous ->
+            report.profiles.firstOrNull {
+                it.protocol == previous.protocol && it.address == previous.address && it.port == previous.port
+            } ?: report.profiles.firstOrNull {
+                SmartConnectPlanner.serverCountryKey(it.name) == SmartConnectPlanner.serverCountryKey(previous.name)
+            }
+        }
         val nextSelected = when {
             selectedServerId == null -> report.profiles.first().id
             servers.any { it.id == selectedServerId && it.subscriptionId == subscription.id } &&
-                report.profiles.none { it.id == selectedServerId } -> report.profiles.first().id
+                report.profiles.none { it.id == selectedServerId } -> (replacement ?: report.profiles.first()).id
             else -> selectedServerId
         }
         return SubscriptionRefreshPlan(

@@ -11,6 +11,10 @@ data class VpnSettings(
     val engine: EngineKind = EngineKind.XRAY,
     val routingMode: RoutingMode = RoutingMode.ALL,
     val routingRules: String = "",
+    val smartConnectEnabled: Boolean = false,
+    val subscriptionRefreshHours: Int = 0,
+    val splitTunnelMode: SplitTunnelMode = SplitTunnelMode.OFF,
+    val splitTunnelPackages: Set<String> = emptySet(),
 ) {
     val routingPolicy: RoutingPolicy
         get() = RoutingPolicy.parse(routingMode, routingRules)
@@ -25,6 +29,10 @@ data class VpnSettings(
             engine: EngineKind = EngineKind.XRAY,
             routingMode: RoutingMode = RoutingMode.ALL,
             routingRules: String = "",
+            smartConnectEnabled: Boolean = false,
+            subscriptionRefreshHours: Int = 0,
+            splitTunnelMode: SplitTunnelMode = SplitTunnelMode.OFF,
+            splitTunnelPackages: Set<String> = emptySet(),
         ): VpnSettings {
             val parsedMtu = mtu.trim().toIntOrNull()
                 ?: throw IllegalArgumentException("MTU должен быть числом")
@@ -40,7 +48,19 @@ data class VpnSettings(
                 ""
             }
             RoutingPolicy.parse(routingMode, normalizedRules)
-            return VpnSettings(parsedMtu, dns, ipv6Enabled, engine, routingMode, normalizedRules)
+            require(subscriptionRefreshHours in setOf(0, 6, 12, 24)) { "Некорректный интервал обновления подписок" }
+            return VpnSettings(
+                parsedMtu,
+                dns,
+                ipv6Enabled,
+                engine,
+                routingMode,
+                normalizedRules,
+                smartConnectEnabled,
+                subscriptionRefreshHours,
+                splitTunnelMode,
+                splitTunnelPackages.filter(String::isNotBlank).toSet(),
+            )
         }
     }
 }

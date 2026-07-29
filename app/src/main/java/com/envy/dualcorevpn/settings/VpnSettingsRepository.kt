@@ -18,17 +18,27 @@ class VpnSettingsRepository(context: Context) {
             RoutingMode.valueOf(preferences.getString(KEY_ROUTING_MODE, RoutingMode.ALL.name) ?: RoutingMode.ALL.name)
         }.getOrDefault(RoutingMode.ALL),
         routingRules = preferences.getString(KEY_ROUTING_RULES, "") ?: "",
+        smartConnectEnabled = preferences.getBoolean(KEY_SMART_CONNECT, false),
+        subscriptionRefreshHours = preferences.getInt(KEY_SUBSCRIPTION_REFRESH_HOURS, 0),
+        splitTunnelMode = runCatching {
+            SplitTunnelMode.valueOf(preferences.getString(KEY_SPLIT_TUNNEL_MODE, SplitTunnelMode.OFF.name) ?: SplitTunnelMode.OFF.name)
+        }.getOrDefault(SplitTunnelMode.OFF),
+        splitTunnelPackages = preferences.getStringSet(KEY_SPLIT_TUNNEL_PACKAGES, emptySet())?.toSet() ?: emptySet(),
     )
 
     fun save(settings: VpnSettings) {
-        preferences.edit()
+        check(preferences.edit()
             .putInt(KEY_MTU, settings.mtu)
             .putString(KEY_DNS, settings.dnsServer)
             .putBoolean(KEY_IPV6, settings.ipv6Enabled)
             .putString(KEY_ENGINE, settings.engine.name)
             .putString(KEY_ROUTING_MODE, settings.routingMode.name)
             .putString(KEY_ROUTING_RULES, settings.routingRules)
-            .apply()
+            .putBoolean(KEY_SMART_CONNECT, settings.smartConnectEnabled)
+            .putInt(KEY_SUBSCRIPTION_REFRESH_HOURS, settings.subscriptionRefreshHours)
+            .putString(KEY_SPLIT_TUNNEL_MODE, settings.splitTunnelMode.name)
+            .putStringSet(KEY_SPLIT_TUNNEL_PACKAGES, settings.splitTunnelPackages)
+            .commit()) { "VPN settings could not be persisted" }
     }
 
     private companion object {
@@ -38,5 +48,9 @@ class VpnSettingsRepository(context: Context) {
         const val KEY_ENGINE = "engine"
         const val KEY_ROUTING_MODE = "routing_mode"
         const val KEY_ROUTING_RULES = "routing_rules"
+        const val KEY_SMART_CONNECT = "smart_connect"
+        const val KEY_SUBSCRIPTION_REFRESH_HOURS = "subscription_refresh_hours"
+        const val KEY_SPLIT_TUNNEL_MODE = "split_tunnel_mode"
+        const val KEY_SPLIT_TUNNEL_PACKAGES = "split_tunnel_packages"
     }
 }

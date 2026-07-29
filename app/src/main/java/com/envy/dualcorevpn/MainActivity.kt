@@ -1,9 +1,11 @@
 package com.envy.dualcorevpn
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -75,7 +78,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -107,6 +114,8 @@ import com.envy.dualcorevpn.logging.LogEntry
 import com.envy.dualcorevpn.logging.LogLevel
 import com.envy.dualcorevpn.server.ServerLatencyResult
 import com.envy.dualcorevpn.server.ServerLatencyTester
+import com.envy.dualcorevpn.server.SmartConnectPlanner
+import com.envy.dualcorevpn.server.SmartConnectState
 import com.envy.dualcorevpn.server.PlannedServer
 import com.envy.dualcorevpn.server.ServerListPlanner
 import com.envy.dualcorevpn.routing.RoutingMode
@@ -121,12 +130,19 @@ import com.envy.dualcorevpn.subscription.SubscriptionClipboard
 import com.envy.dualcorevpn.subscription.SubscriptionDeepLink
 import com.envy.dualcorevpn.subscription.SubscriptionImportRequest
 import com.envy.dualcorevpn.subscription.SubscriptionRepository
+import com.envy.dualcorevpn.subscription.SubscriptionRefreshWorker
+import com.envy.dualcorevpn.subscription.QrImportClassifier
+import com.envy.dualcorevpn.subscription.QrImportPayload
 import com.envy.dualcorevpn.update.UpdateRepository
 import com.envy.dualcorevpn.ui.HomeDashboard
+import com.envy.dualcorevpn.ui.AdvancedFeaturesScreen
 import com.envy.dualcorevpn.ui.DashboardHeader
 import com.envy.dualcorevpn.ui.SpeedDashboard
 import com.envy.dualcorevpn.ui.dashboardStrings
 import com.envy.dualcorevpn.vpn.DualCoreVpnService
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -160,6 +176,8 @@ private fun readBackupBounded(reader: java.io.Reader): String {
     return result.toString()
 }
 
+private const val REQUEST_NOTIFICATION_PERMISSION = 1001
+
 class MainActivity : ComponentActivity() {
     private lateinit var repository: SubscriptionRepository
     private lateinit var settingsRepository: VpnSettingsRepository
@@ -168,6 +186,20 @@ class MainActivity : ComponentActivity() {
     private var vpnSettings by mutableStateOf(VpnSettings())
     private var permissionResult: ((Boolean) -> Unit)? = null
     private var pendingConfig: String? = null
+    private var afterNotificationPermission: (() -> Unit)? = null
+    private var notificationPermissionResolved = false
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_NOTIFICATION_PERMISSION) return
+        notificationPermissionResolved = true
+        val continuation = afterNotificationPermission
+        afterNotificationPermission = null
+        if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
+            message = getString(R.string.notification_permission_denied)
+        }
+        continuation?.invoke()
+    }
     private var reloadUi by mutableStateOf(0)
     private var loading by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
@@ -177,6 +209,7 @@ class MainActivity : ComponentActivity() {
     private var updateStatus by mutableStateOf("")
     private var pendingSubscriptionImport by mutableStateOf<SubscriptionImportRequest?>(null)
     private var pendingMieruImport by mutableStateOf<MieruImportRequest?>(null)
+    private var pendingQrProfile by mutableStateOf<ServerProfile?>(null)
     private var clearViewedIntentDataOnResume = false
     private var pendingBackupRestore by mutableStateOf<String?>(null)
 
@@ -243,7 +276,11 @@ class MainActivity : ComponentActivity() {
                     onDismissMessage = { message = null },
                     onConnect = ::requestConnect,
                     onDisconnect = ::stopVpn,
-                    onSelect = { repository.select(it.id); reloadUi++ },
+                    onSelect = {
+                        repository.select(it.id)
+                        SmartConnectState(this).pin(it.id)
+                        reloadUi++
+                    },
                     pendingSubscriptionImport = pendingSubscriptionImport,
                     onDismissSubscriptionImport = { pendingSubscriptionImport = null },
                     onAddSubscription = ::addSubscription,
@@ -253,9 +290,11 @@ class MainActivity : ComponentActivity() {
                     onImportBackup = { backupImportLauncher.launch(arrayOf("application/json", "text/plain")) },
                     updateStatus = updateStatus,
                     onCheckUpdate = ::checkForUpdate,
+                    onScanQr = ::scanQrCode,
                     vpnSettings = vpnSettings,
                     onSaveVpnSettings = { settings ->
                         settingsRepository.save(settings)
+                        SubscriptionRefreshWorker.schedule(this, settings.subscriptionRefreshHours)
                         vpnSettings = settings
                         message = "VPN-настройки сохранены; применятся при следующем подключении"
                     },
@@ -295,6 +334,26 @@ class MainActivity : ComponentActivity() {
                         },
                         dismissButton = {
                             TextButton(onClick = { pendingMieruImport = null }) {
+                                Text(stringResource(R.string.mieru_import_cancel))
+                            }
+                        },
+                    )
+                }
+                pendingQrProfile?.let { profile ->
+                    AlertDialog(
+                        onDismissRequest = { pendingQrProfile = null },
+                        title = { Text(stringResource(R.string.qr_import_title)) },
+                        text = { Text(stringResource(R.string.qr_import_profile_summary, profile.name, profile.protocol, profile.address, profile.port)) },
+                        confirmButton = {
+                            Button(onClick = {
+                                repository.importProfile(profile)
+                                pendingQrProfile = null
+                                reloadUi++
+                                message = getString(R.string.qr_import_success)
+                            }) { Text(stringResource(R.string.qr_import_confirm)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingQrProfile = null }) {
                                 Text(stringResource(R.string.mieru_import_cancel))
                             }
                         },
@@ -436,6 +495,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun scanQrCode() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { barcode -> barcode.rawValue?.let(::handleQrValue) }
+            .addOnFailureListener { message = getString(R.string.qr_import_failed) }
+    }
+
+    private fun handleQrValue(raw: String) {
+        runCatching { QrImportClassifier.classify(raw) }
+            .onSuccess { payload ->
+                when (payload) {
+                    is QrImportPayload.Subscription -> pendingSubscriptionImport = payload.request.copy(
+                        name = payload.request.name.ifBlank { getString(R.string.qr_subscription_name) },
+                    )
+                    is QrImportPayload.MieruProfile -> pendingMieruImport = payload.request
+                    is QrImportPayload.Profile -> pendingQrProfile = payload.profile
+                }
+            }
+            .onFailure { message = getString(R.string.qr_import_invalid) }
+    }
+
     private fun exportLogs() {
         val exportDirectory = java.io.File(cacheDir, "exports").apply { mkdirs() }
         val exportFile = java.io.File(exportDirectory, "lust-diagnostics.log").apply {
@@ -452,8 +535,42 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestConnect(config: String) {
-        if (VpnService.prepare(this) == null) startVpn(config) else {
-            pendingConfig = config
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !notificationPermissionResolved &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            afterNotificationPermission = { requestConnect(config) }
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATION_PERMISSION)
+            return
+        }
+        val pinned = repository.servers().firstOrNull { it.config == config } ?: return
+        if (!vpnSettings.smartConnectEnabled) {
+            SmartConnectState(this).pin(pinned.id)
+            requestVpnPermission(pinned)
+            return
+        }
+        lifecycleScope.launch {
+            loading = true
+            val servers = repository.servers()
+            val results = ServerLatencyTester().test(servers, timeoutMillis = 3_000)
+            latencyResults = results
+            val state = SmartConnectState(this@MainActivity)
+            val failures = state.record(pinned.id, results[pinned.id]?.latencyMillis != null)
+            val chosen = SmartConnectPlanner.choose(pinned, servers, results, failures)
+            if (chosen.id != pinned.id) {
+                repository.select(chosen.id)
+                state.pin(chosen.id)
+                reloadUi++
+                message = getString(R.string.smart_connect_switched, chosen.name)
+            }
+            loading = false
+            requestVpnPermission(chosen)
+        }
+    }
+
+    private fun requestVpnPermission(server: ServerProfile) {
+        if (VpnService.prepare(this) == null) startVpn(server.config) else {
+            pendingConfig = server.config
             permissionResult = { granted ->
                 if (granted) pendingConfig?.let(::startVpn)
                 pendingConfig = null
@@ -463,9 +580,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVpn(config: String) {
+        val serverName = repository.servers().firstOrNull { it.config == config }?.name
         val intent = Intent(this, DualCoreVpnService::class.java)
             .setAction(DualCoreVpnService.ACTION_CONNECT)
             .putExtra(DualCoreVpnService.EXTRA_XRAY_CONFIG, config)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_NAME, serverName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 
@@ -555,6 +674,7 @@ private fun LustApp(
     onImportBackup: () -> Unit,
     updateStatus: String,
     onCheckUpdate: () -> Unit,
+    onScanQr: () -> Unit,
     vpnSettings: VpnSettings,
     onSaveVpnSettings: (VpnSettings) -> Unit,
     latencyResults: Map<String, ServerLatencyResult>,
@@ -628,6 +748,7 @@ private fun LustApp(
                     onImportBackup,
                     updateStatus,
                     onCheckUpdate,
+                    onScanQr,
                 )
             }
             }
@@ -639,13 +760,39 @@ private fun LustApp(
             modifier = Modifier.background(Background).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 12.dp),
         ) {
             Surface(
-                color = Color(0xF5111413),
+                color = Color(0x52171B19),
                 shape = RoundedCornerShape(23.dp),
-                border = BorderStroke(1.dp, Color(0xFF323735)),
-                modifier = Modifier.fillMaxWidth().height(72.dp),
+                border = BorderStroke(1.dp, Color(0x6189928E)),
+                modifier = Modifier.fillMaxWidth().height(72.dp)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = RoundedCornerShape(23.dp),
+                        ambientColor = Color.Black.copy(alpha = .70f),
+                        spotColor = Accent.copy(alpha = .12f),
+                    )
+                    .clip(RoundedCornerShape(23.dp)),
             ) {
                 val strings = dashboardStrings()
-                BoxWithConstraints(Modifier.fillMaxSize().padding(6.dp)) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxSize().blur(14.dp).background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = .07f),
+                                    Accent.copy(alpha = .055f),
+                                    Color.Black.copy(alpha = .10f),
+                                ),
+                            ),
+                        ),
+                    )
+                    Box(
+                        Modifier.fillMaxWidth().height(1.dp).background(
+                            Brush.horizontalGradient(
+                                listOf(Color.Transparent, Color.White.copy(alpha = .22f), Color.Transparent),
+                            ),
+                        ),
+                    )
+                    BoxWithConstraints(Modifier.fillMaxSize().padding(6.dp)) {
                     val destinations = listOf(AppTab.SPEED, AppTab.HOME, AppTab.SETTINGS)
                     val activeDestination = if (tab == AppTab.SUBSCRIPTIONS) subscriptionsParent else tab
                     val activeIndex = destinations.indexOf(activeDestination).coerceAtLeast(0)
@@ -657,8 +804,8 @@ private fun LustApp(
                     )
                     Box(
                         Modifier.offset(x = indicatorX).width(itemWidth).fillMaxHeight()
-                            .background(Color(0xFF1C2521), RoundedCornerShape(18.dp))
-                            .border(1.dp, Color(0x8CA6F3D1), RoundedCornerShape(18.dp)),
+                            .background(Color(0x701C2521), RoundedCornerShape(18.dp))
+                            .border(1.dp, Color(0x80A6F3D1), RoundedCornerShape(18.dp)),
                     )
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         destinations.forEach { item ->
@@ -689,6 +836,7 @@ private fun LustApp(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -956,7 +1104,7 @@ private fun CompactLogLine(entry: LogEntry) {
     }
 }
 
-private enum class SettingsPage { ROOT, TRAFFIC }
+private enum class SettingsPage { ROOT, TRAFFIC, FEATURES }
 
 @Composable
 private fun SettingsScreen(
@@ -966,6 +1114,7 @@ private fun SettingsScreen(
     onImportBackup: () -> Unit,
     updateStatus: String,
     onCheckUpdate: () -> Unit,
+    onScanQr: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.ROOT) }
     when (page) {
@@ -974,6 +1123,7 @@ private fun SettingsScreen(
             SettingsRoot(
                 settings = settings,
                 onOpenTraffic = { page = SettingsPage.TRAFFIC },
+                onOpenFeatures = { page = SettingsPage.FEATURES },
                 onExportBackup = onExportBackup,
                 onImportBackup = onImportBackup,
                 updateStatus = updateStatus,
@@ -985,6 +1135,12 @@ private fun SettingsScreen(
             onSave = onSave,
             onBack = { page = SettingsPage.ROOT },
         )
+        SettingsPage.FEATURES -> AdvancedFeaturesScreen(
+            initial = settings,
+            onBack = { page = SettingsPage.ROOT },
+            onSave = onSave,
+            onScanQr = onScanQr,
+        )
     }
 }
 
@@ -992,6 +1148,7 @@ private fun SettingsScreen(
 private fun SettingsRoot(
     settings: VpnSettings,
     onOpenTraffic: () -> Unit,
+    onOpenFeatures: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     updateStatus: String,
@@ -1008,6 +1165,14 @@ private fun SettingsRoot(
                 description = stringResource(R.string.settings_traffic_description),
                 value = routingModeLabel(settings.routingMode),
                 onClick = onOpenTraffic,
+            )
+        }
+        item {
+            SettingsNavigationCard(
+                title = stringResource(R.string.features_title),
+                description = stringResource(R.string.features_subtitle),
+                value = stringResource(R.string.open),
+                onClick = onOpenFeatures,
             )
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_core)) }

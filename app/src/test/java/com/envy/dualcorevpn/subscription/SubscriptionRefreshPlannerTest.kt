@@ -40,4 +40,27 @@ class SubscriptionRefreshPlannerTest {
             updatedAt = 20L,
         )
     }
+
+    @Test
+    fun `renamed selected server keeps identical endpoint`() {
+        val renamed = ServerProfile("renamed", "sub", "Renamed", "vless", oldServer.address, oldServer.port, "new")
+        val unrelated = ServerProfile("unrelated", "sub", "Other", "vless", "other-country.example", 443, "new")
+        val plan = SubscriptionRefreshPlanner.plan(
+            listOf(old), listOf(oldServer), oldServer.id, old,
+            SubscriptionParser.ParseReport(listOf(unrelated, renamed), 0, 0, 0), 20L,
+        )
+        assertEquals(renamed.id, plan.selectedServerId)
+    }
+
+    @Test
+    fun `removed selected endpoint stays in same country`() {
+        val previous = oldServer.copy(name = "🇩🇪 Berlin")
+        val foreign = freshServer.copy(id = "fi", name = "🇫🇮 Helsinki")
+        val sameCountry = freshServer.copy(id = "de", name = "Germany Frankfurt")
+        val plan = SubscriptionRefreshPlanner.plan(
+            listOf(old), listOf(previous), previous.id, old,
+            SubscriptionParser.ParseReport(listOf(foreign, sameCountry), 0, 0, 0), 20L,
+        )
+        assertEquals(sameCountry.id, plan.selectedServerId)
+    }
 }

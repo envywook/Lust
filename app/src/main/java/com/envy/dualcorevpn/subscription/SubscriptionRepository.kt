@@ -9,6 +9,8 @@ import java.net.URL
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -89,8 +91,8 @@ class SubscriptionRepository(context: Context) {
         return updated
     }
 
-    fun select(serverId: String?) {
-        preferences.edit().putString(KEY_SELECTED, serverId).apply()
+    fun select(serverId: String?) = synchronized(preferenceLock) {
+        check(preferences.edit().putString(KEY_SELECTED, serverId).commit()) { "Selected server could not be persisted" }
     }
 
     fun importProfile(profile: ServerProfile) {
@@ -99,7 +101,7 @@ class SubscriptionRepository(context: Context) {
         select(profile.id)
     }
 
-    suspend fun addAndUpdate(name: String, url: String): SubscriptionUpdateResult {
+    suspend fun addAndUpdate(name: String, url: String): SubscriptionUpdateResult = updateMutex.withLock {
         require(url.startsWith("https://") || url.startsWith("http://")) {
             "Ссылка подписки должна начинаться с https:// или http://"
         }
@@ -109,33 +111,37 @@ class SubscriptionRepository(context: Context) {
             .copy(name = name.ifBlank { existing?.name ?: hostName(url) })
         val fetched = fetch(subscription)
         val enrichedSubscription = subscription.copy(usage = fetched.usage ?: subscription.usage)
-        val plan = SubscriptionRefreshPlanner.plan(
-            subscriptions = current,
-            servers = servers(),
-            selectedServerId = selectedServerId(),
-            subscription = enrichedSubscription,
-            report = fetched.report,
-            updatedAt = System.currentTimeMillis(),
-        )
-        persist(plan)
-        return plan.result
+        synchronized(preferenceLock) {
+            val plan = SubscriptionRefreshPlanner.plan(
+                subscriptions = subscriptions(),
+                servers = servers(),
+                selectedServerId = selectedServerId(),
+                subscription = enrichedSubscription,
+                report = fetched.report,
+                updatedAt = System.currentTimeMillis(),
+            )
+            persist(plan)
+            plan.result
+        }
     }
 
-    suspend fun update(subscription: Subscription): SubscriptionUpdateResult {
+    suspend fun update(subscription: Subscription): SubscriptionUpdateResult = updateMutex.withLock {
         val fetched = fetch(subscription)
-        val plan = SubscriptionRefreshPlanner.plan(
-            subscriptions = subscriptions(),
-            servers = servers(),
-            selectedServerId = selectedServerId(),
-            subscription = subscription.copy(usage = fetched.usage ?: subscription.usage),
-            report = fetched.report,
-            updatedAt = System.currentTimeMillis(),
-        )
-        persist(plan)
-        return plan.result
+        synchronized(preferenceLock) {
+            val plan = SubscriptionRefreshPlanner.plan(
+                subscriptions = subscriptions(),
+                servers = servers(),
+                selectedServerId = selectedServerId(),
+                subscription = subscription.copy(usage = fetched.usage ?: subscription.usage),
+                report = fetched.report,
+                updatedAt = System.currentTimeMillis(),
+            )
+            persist(plan)
+            plan.result
+        }
     }
 
-    fun remove(subscription: Subscription) {
+    fun remove(subscription: Subscription) = synchronized(preferenceLock) {
         val remaining = servers().filterNot { it.subscriptionId == subscription.id }
         saveSubscriptions(subscriptions().filterNot { it.id == subscription.id })
         saveServers(remaining)
@@ -210,6 +216,8 @@ class SubscriptionRepository(context: Context) {
     private fun hostName(url: String): String = runCatching { URI(url).host }.getOrNull().orEmpty().ifBlank { "Подписка" }
 
     private companion object {
+        val updateMutex = Mutex()
+        val preferenceLock = Any()
         const val KEY_SUBSCRIPTIONS = "subscriptions"
         const val KEY_SERVERS = "servers"
         const val KEY_SELECTED = "selected_server"

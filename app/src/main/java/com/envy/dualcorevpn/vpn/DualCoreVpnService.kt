@@ -41,6 +41,8 @@ class DualCoreVpnService : VpnService() {
     private var operation: Job? = null
     private var coordinator: VpnSessionCoordinator? = null
     private var initializationFailure: Throwable? = null
+    private var serverName: String? = null
+    private var connectedAtMillis: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -53,7 +55,10 @@ class DualCoreVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_CONNECT -> connect(intent.getStringExtra(EXTRA_XRAY_CONFIG))
+            ACTION_CONNECT -> {
+                serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
+                connect(intent.getStringExtra(EXTRA_XRAY_CONFIG))
+            }
             ACTION_DISCONNECT -> disconnect()
             else -> stopSelf()
         }
@@ -76,7 +81,9 @@ class DualCoreVpnService : VpnService() {
                 val session = createCoordinator(engineKind)
                 coordinator = session
                 session.start(config)
-                stateMachine.dispatch(VpnEvent.Connected(System.currentTimeMillis()))
+                val connectedAt = System.currentTimeMillis()
+                stateMachine.dispatch(VpnEvent.Connected(connectedAt))
+                connectedAtMillis = connectedAt
                 AppLog.info("VPN", "Session connected")
                 updateNotification(getString(R.string.status_connected))
             } catch (cancelled: CancellationException) {
@@ -127,13 +134,13 @@ class DualCoreVpnService : VpnService() {
                     .addAddress("198.18.0.1", 30)
                     .addRoute("0.0.0.0", 0)
                     .addDnsServer(settings.dnsServer)
-                    .addDisallowedApplication(packageName)
                     .apply {
                         if (settings.ipv6Enabled) {
                             addAddress("fc00::1", 126)
                             addRoute("::", 0)
                         }
                     }
+                    .applySplitTunnel(settings, packageName)
                     .establish() ?: error("Android refused to establish the VPN interface")
             },
             writeConfig = { content ->
@@ -194,15 +201,28 @@ class DualCoreVpnService : VpnService() {
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
     private fun buildNotification(status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.stat_sys_warning)
+        .setSmallIcon(R.drawable.ic_stat_vpn)
         .setContentTitle(getString(R.string.app_name))
-        .setContentText(status)
+        .setContentText(serverName?.let { "$status · $it" } ?: status)
+        .setSubText(serverName)
+        .setUsesChronometer(connectedAtMillis > 0L)
+        .setWhen(if (connectedAtMillis > 0L) connectedAtMillis else System.currentTimeMillis())
         .setOngoing(true)
         .setContentIntent(
             PendingIntent.getActivity(
                 this,
                 0,
                 Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        )
+        .addAction(
+            0,
+            getString(R.string.change_server),
+            PendingIntent.getActivity(
+                this,
+                2,
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
         )
@@ -241,6 +261,7 @@ class DualCoreVpnService : VpnService() {
         const val ACTION_CONNECT = "com.envy.dualcorevpn.CONNECT"
         const val ACTION_DISCONNECT = "com.envy.dualcorevpn.DISCONNECT"
         const val EXTRA_XRAY_CONFIG = "com.envy.dualcorevpn.XRAY_CONFIG"
+        const val EXTRA_SERVER_NAME = "com.envy.dualcorevpn.SERVER_NAME"
         private const val CHANNEL_ID = "vpn_connection"
         private const val NOTIFICATION_ID = 1001
     }

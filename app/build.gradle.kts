@@ -19,8 +19,8 @@ android {
         applicationId = "com.envy.dualcorevpn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 19
-        versionName = "0.1.18-alpha"
+        versionCode = 20
+        versionName = "0.1.19-alpha"
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"5c9fb76e8a42eb4fecba7206fa20f35f54c78585d416b233ea77fcfbd343add6\"")
         buildConfigField("String", "MAXSPEED_TELEGRAM_URL", buildConfigString(maxSpeedTelegramUrl.get()))
         buildConfigField("String", "MAXSPEED_SUBSCRIPTION_HOSTS", buildConfigString(maxSpeedSubscriptionHosts.get()))
@@ -68,6 +68,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation(files("libs/libv2ray.aar"))
     debugImplementation("androidx.compose.ui:ui-tooling")

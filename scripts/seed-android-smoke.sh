@@ -21,6 +21,7 @@ for attempt in 1 2 3; do
 done
 $installed || { echo "APK installation failed after 3 attempts" >&2; exit 1; }
 "$ADB" shell appops set "$PACKAGE" ACTIVATE_VPN allow
+"$ADB" shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
 "$ADB" shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
 for _ in $(seq 1 20); do
   "$ADB" shell run-as "$PACKAGE" test -d shared_prefs 2>/dev/null && break
