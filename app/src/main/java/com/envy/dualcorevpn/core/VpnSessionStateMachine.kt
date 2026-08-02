@@ -1,8 +1,11 @@
 package com.envy.dualcorevpn.core
 
 sealed interface VpnEvent {
-    data class ConnectRequested(val engine: EngineKind) : VpnEvent
-    data class Connected(val startedAtEpochMillis: Long) : VpnEvent
+    data class ConnectRequested(
+        val engine: EngineKind,
+        val server: VpnSessionServer? = null,
+    ) : VpnEvent
+    data class Connected(val startedAtElapsedRealtimeMillis: Long) : VpnEvent
     data object DisconnectRequested : VpnEvent
     data object Disconnected : VpnEvent
     data object Terminated : VpnEvent
@@ -24,12 +27,16 @@ class VpnSessionStateMachine(
         }
         state = when (val current = state) {
             VpnSessionState.Disconnected -> when (event) {
-                is VpnEvent.ConnectRequested -> VpnSessionState.Connecting(event.engine)
+                is VpnEvent.ConnectRequested -> VpnSessionState.Connecting(event.engine, event.server)
                 else -> invalid(event)
             }
 
             is VpnSessionState.Connecting -> when (event) {
-                is VpnEvent.Connected -> VpnSessionState.Connected(current.engine, event.startedAtEpochMillis)
+                is VpnEvent.Connected -> VpnSessionState.Connected(
+                    current.engine,
+                    event.startedAtElapsedRealtimeMillis,
+                    current.server,
+                )
                 VpnEvent.DisconnectRequested -> VpnSessionState.Disconnecting(current.engine)
                 is VpnEvent.Failed -> VpnSessionState.Error(current.engine, event.message)
                 else -> invalid(event)
@@ -49,7 +56,7 @@ class VpnSessionStateMachine(
 
             is VpnSessionState.Error -> when (event) {
                 VpnEvent.Disconnected -> VpnSessionState.Disconnected
-                is VpnEvent.ConnectRequested -> VpnSessionState.Connecting(event.engine)
+                is VpnEvent.ConnectRequested -> VpnSessionState.Connecting(event.engine, event.server)
                 else -> invalid(event)
             }
         }

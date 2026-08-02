@@ -14,6 +14,12 @@
     <string name="nav_settings">Настройки</string>
     <string name="metric_download">Скачивание</string>
     <string name="metric_upload">Отправка</string>
+    <string name="session_total">За сессию</string>
+    <string name="session_duration">Время</string>
+    <string name="session_engine">Ядро</string>
+    <string name="session_protocol">Протокол</string>
+    <string name="session_endpoint">Сервер</string>
+    <string name="session_ping">Пинг</string>
     <string name="connection_not_connected">Не подключено</string>
     <string name="connection_connected">Подключено</string>
     <string name="connection_connecting">Подключение…</string>

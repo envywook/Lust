@@ -46,6 +46,10 @@ class LustTileService : TileService() {
             .setAction(DualCoreVpnService.ACTION_CONNECT)
             .putExtra(DualCoreVpnService.EXTRA_XRAY_CONFIG, server.config)
             .putExtra(DualCoreVpnService.EXTRA_SERVER_NAME, server.name)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_ID, server.id)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_PROTOCOL, server.protocol)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_ADDRESS, server.address)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_PORT, server.port)
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
     }
 

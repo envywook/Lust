@@ -185,7 +185,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var updateRepository: UpdateRepository
     private var vpnSettings by mutableStateOf(VpnSettings())
     private var permissionResult: ((Boolean) -> Unit)? = null
-    private var pendingConfig: String? = null
+    private var pendingVpnServer: ServerProfile? = null
     private var afterNotificationPermission: (() -> Unit)? = null
     private var notificationPermissionResolved = false
 
@@ -569,22 +569,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpnPermission(server: ServerProfile) {
-        if (VpnService.prepare(this) == null) startVpn(server.config) else {
-            pendingConfig = server.config
+        if (VpnService.prepare(this) == null) startVpn(server) else {
+            pendingVpnServer = server
             permissionResult = { granted ->
-                if (granted) pendingConfig?.let(::startVpn)
-                pendingConfig = null
+                if (granted) pendingVpnServer?.let(::startVpn)
+                pendingVpnServer = null
             }
             vpnPermissionLauncher.launch(VpnService.prepare(this))
         }
     }
 
-    private fun startVpn(config: String) {
-        val serverName = repository.servers().firstOrNull { it.config == config }?.name
+    private fun startVpn(server: ServerProfile) {
         val intent = Intent(this, DualCoreVpnService::class.java)
             .setAction(DualCoreVpnService.ACTION_CONNECT)
-            .putExtra(DualCoreVpnService.EXTRA_XRAY_CONFIG, config)
-            .putExtra(DualCoreVpnService.EXTRA_SERVER_NAME, serverName)
+            .putExtra(DualCoreVpnService.EXTRA_XRAY_CONFIG, server.config)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_NAME, server.name)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_ID, server.id)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_PROTOCOL, server.protocol)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_ADDRESS, server.address)
+            .putExtra(DualCoreVpnService.EXTRA_SERVER_PORT, server.port)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 
@@ -704,19 +707,26 @@ private fun LustApp(
                 label = "mainTab",
             ) { activeTab ->
             when (activeTab) {
-                AppTab.HOME -> HomeDashboard(
-                    state = vpnState,
-                    selected = selected,
-                    servers = servers,
-                    subscriptions = subscriptions,
-                    onConnect = onConnect,
-                    onDisconnect = onDisconnect,
-                    onSelect = onSelect,
-                    onManageSubscriptions = {
-                        subscriptionsParent = AppTab.HOME
-                        tab = AppTab.SUBSCRIPTIONS
-                    },
-                )
+                AppTab.HOME -> {
+                    val sessionProfile = (vpnState as? VpnSessionState.Connected)?.server?.let { sessionServer ->
+                        servers.firstOrNull { it.id == sessionServer.profileId }
+                    }
+                    HomeDashboard(
+                        state = vpnState,
+                        selected = selected,
+                        sessionProfile = sessionProfile,
+                        servers = servers,
+                        subscriptions = subscriptions,
+                        latency = sessionProfile?.let { latencyResults[it.id] },
+                        onConnect = onConnect,
+                        onDisconnect = onDisconnect,
+                        onSelect = onSelect,
+                        onManageSubscriptions = {
+                            subscriptionsParent = AppTab.HOME
+                            tab = AppTab.SUBSCRIPTIONS
+                        },
+                    )
+                }
                 AppTab.SPEED -> SpeedDashboard(
                     state = vpnState,
                     selected = selected,

@@ -25,4 +25,7 @@ object TProxyService {
     fun stop() {
         TProxyStopService()
     }
+
+    /** Returns HEV tunnel counters: tx packets/bytes, then rx packets/bytes. */
+    fun getStats(): LongArray = TProxyGetStats()
 }

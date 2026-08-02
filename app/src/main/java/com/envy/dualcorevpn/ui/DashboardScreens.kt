@@ -3,9 +3,8 @@ package com.envy.dualcorevpn.ui
 import android.content.Intent
 import android.graphics.Paint
 import android.net.ConnectivityManager
-import android.net.TrafficStats
 import android.net.Uri
-import android.os.Process
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 
 import androidx.compose.animation.fadeIn
@@ -60,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,7 +100,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.envy.dualcorevpn.BuildConfig
+import com.envy.dualcorevpn.core.EngineKind
 import com.envy.dualcorevpn.core.VpnSessionState
+import com.envy.dualcorevpn.core.VpnTrafficSnapshot
+import com.envy.dualcorevpn.core.VpnTrafficStore
 import com.envy.dualcorevpn.subscription.ServerProfile
 import com.envy.dualcorevpn.subscription.Subscription
 import java.net.URI
@@ -144,6 +147,12 @@ internal data class DashboardStrings(
     val otherServers: String,
     val manageSubscriptions: String,
     val telegramNews: String,
+    val total: String,
+    val duration: String,
+    val engine: String,
+    val protocol: String,
+    val endpoint: String,
+    val ping: String,
 )
 
 @Composable
@@ -170,33 +179,13 @@ internal fun dashboardStrings() = DashboardStrings(
     otherServers = stringResource(com.envy.dualcorevpn.R.string.servers_other),
     manageSubscriptions = stringResource(com.envy.dualcorevpn.R.string.subscriptions_manage),
     telegramNews = stringResource(com.envy.dualcorevpn.R.string.telegram_news),
+    total = stringResource(com.envy.dualcorevpn.R.string.session_total),
+    duration = stringResource(com.envy.dualcorevpn.R.string.session_duration),
+    engine = stringResource(com.envy.dualcorevpn.R.string.session_engine),
+    protocol = stringResource(com.envy.dualcorevpn.R.string.session_protocol),
+    endpoint = stringResource(com.envy.dualcorevpn.R.string.session_endpoint),
+    ping = stringResource(com.envy.dualcorevpn.R.string.session_ping),
 )
-
-internal data class LiveRates(val downloadBytesPerSecond: Long = 0, val uploadBytesPerSecond: Long = 0)
-
-@Composable
-internal fun rememberLiveRates(active: Boolean): LiveRates {
-    var rates by remember { mutableStateOf(LiveRates()) }
-    var previousRx by remember { mutableLongStateOf(TrafficStats.getUidRxBytes(Process.myUid()).coerceAtLeast(0L)) }
-    var previousTx by remember { mutableLongStateOf(TrafficStats.getUidTxBytes(Process.myUid()).coerceAtLeast(0L)) }
-    LaunchedEffect(active) {
-        if (!active) {
-            rates = LiveRates()
-            return@LaunchedEffect
-        }
-        previousRx = TrafficStats.getUidRxBytes(Process.myUid()).coerceAtLeast(0L)
-        previousTx = TrafficStats.getUidTxBytes(Process.myUid()).coerceAtLeast(0L)
-        while (true) {
-            delay(1_000)
-            val rx = TrafficStats.getUidRxBytes(Process.myUid()).coerceAtLeast(previousRx)
-            val tx = TrafficStats.getUidTxBytes(Process.myUid()).coerceAtLeast(previousTx)
-            rates = LiveRates(rx - previousRx, tx - previousTx)
-            previousRx = rx
-            previousTx = tx
-        }
-    }
-    return rates
-}
 
 @Composable
 internal fun DashboardHeader() {
@@ -226,8 +215,10 @@ internal fun DashboardHeader() {
 internal fun HomeDashboard(
     state: VpnSessionState,
     selected: ServerProfile?,
+    sessionProfile: ServerProfile?,
     servers: List<ServerProfile>,
     subscriptions: List<Subscription>,
+    latency: ServerLatencyResult?,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onSelect: (ServerProfile) -> Unit,
@@ -236,7 +227,7 @@ internal fun HomeDashboard(
     val strings = dashboardStrings()
     val connected = state is VpnSessionState.Connected
     val busy = state is VpnSessionState.Connecting || state is VpnSessionState.Disconnecting
-    val rates = rememberLiveRates(connected)
+    val rates by VpnTrafficStore.state.collectAsState()
     Column(Modifier.fillMaxSize().background(Bg)) {
         DashboardHeader()
         Column(
@@ -254,10 +245,105 @@ internal fun HomeDashboard(
                 onClick = { if (connected || busy) onDisconnect() else selected?.let { onConnect(it.config) } },
             )
             Spacer(Modifier.height(26.dp))
+            SessionDetails(state, sessionProfile, rates, latency)
+            if (connected) Spacer(Modifier.height(12.dp))
             ServerSlider(selected, servers, subscriptions, onSelect, onManageSubscriptions)
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+@Composable
+private fun SessionDetails(
+    state: VpnSessionState,
+    sessionProfile: ServerProfile?,
+    rates: VpnTrafficSnapshot,
+    latency: ServerLatencyResult?,
+) {
+    if (state !is VpnSessionState.Connected) return
+    val sessionServer = state.server
+    val protocol = sessionServer?.protocol ?: sessionProfile?.protocol ?: "—"
+    val endpoint = sessionServer?.let { safeEndpointLabel(it.address, it.port) }
+        ?: sessionProfile?.let { safeEndpointLabel(it.address, it.port) }
+        ?: "—"
+    val strings = dashboardStrings()
+    var now by remember(state.startedAtElapsedRealtimeMillis) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(state.startedAtElapsedRealtimeMillis) {
+        while (true) {
+            now = SystemClock.elapsedRealtime()
+            delay(1_000)
+        }
+    }
+    val total = rates.downloadedBytes + rates.uploadedBytes
+    val layout = sessionDetailsLayout(
+        total = formatBytes(total),
+        duration = formatSessionDuration(now - state.startedAtElapsedRealtimeMillis),
+        ping = latency?.latencyMillis?.let { "$it ms" } ?: "—",
+        engine = engineLabel(state.engine),
+        protocol = protocol.uppercase(Locale.ROOT),
+        endpoint = endpoint,
+        totalLabel = strings.total,
+        durationLabel = strings.duration,
+        pingLabel = strings.ping,
+        engineLabel = strings.engine,
+        protocolLabel = strings.protocol,
+        endpointLabel = strings.endpoint,
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth().height(layout.cardHeightDp.dp),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Border),
+        colors = CardDefaults.cardColors(containerColor = PanelHigh),
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                layout.items.take(3).forEach { item -> SessionDatum(item.label, item.value) }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth()) {
+                layout.items.drop(3).forEach { item ->
+                    SessionDatum(item.label, item.value, Modifier.weight(item.weight))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionDatum(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, color = TextMuted, fontSize = 10.sp, maxLines = 1)
+        Text(
+            value,
+            color = TextMain,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun engineLabel(engine: EngineKind): String = when (engine) {
+    EngineKind.XRAY -> "Xray"
+    EngineKind.SING_BOX -> "sing-box"
+}
+
+private fun formatBytes(bytes: Long): String {
+    val safe = bytes.coerceAtLeast(0L)
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var value = safe.toDouble()
+    var index = 0
+    while (value >= 1_000.0 && index < units.lastIndex) {
+        value /= 1_000.0
+        index++
+    }
+    val displayed = when {
+        index == 0 -> safe.toString()
+        value >= 100.0 -> "%.0f".format(Locale.ROOT, value)
+        else -> "%.1f".format(Locale.ROOT, value)
+    }
+    return "$displayed ${units[index]}"
 }
 
 @Composable
@@ -510,7 +596,7 @@ internal fun SpeedDashboard(
     onManageSubscriptions: () -> Unit,
 ) {
     val strings = dashboardStrings()
-    val rates = rememberLiveRates(state is VpnSessionState.Connected)
+    val rates by VpnTrafficStore.state.collectAsState()
     val sections = remember(servers, subscriptions) { planServerSections(servers, subscriptions, BuildConfig.MAXSPEED_SUBSCRIPTION_HOSTS) }
     Column(Modifier.fillMaxSize().background(Bg)) {
         DashboardHeader()

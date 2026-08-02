@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.envy.dualcorevpn.MainActivity
 import com.envy.dualcorevpn.R
@@ -14,12 +15,19 @@ import com.envy.dualcorevpn.core.EngineKind
 import com.envy.dualcorevpn.core.NativeSingBoxGateway
 import com.envy.dualcorevpn.core.NativeXrayGateway
 import com.envy.dualcorevpn.core.SingBoxEngine
+import com.envy.dualcorevpn.core.TrafficCounterState
 import com.envy.dualcorevpn.core.VpnEvent
 import com.envy.dualcorevpn.core.VpnSessionCoordinator
+import com.envy.dualcorevpn.core.VpnSessionServer
 import com.envy.dualcorevpn.core.VpnSessionState
 import com.envy.dualcorevpn.core.VpnSessionStore
 import com.envy.dualcorevpn.core.VpnSessionStateMachine
+import com.envy.dualcorevpn.core.VpnTrafficSnapshot
+import com.envy.dualcorevpn.core.VpnTrafficStore
 import com.envy.dualcorevpn.core.XrayConfigValidator
+import com.envy.dualcorevpn.core.advanceTrafficCounters
+import com.envy.dualcorevpn.core.bytesPerSecond
+import com.envy.dualcorevpn.core.hevTunnelByteCounters
 import com.envy.dualcorevpn.core.XrayEngine
 import com.envy.dualcorevpn.core.XrayRuntime
 import com.envy.dualcorevpn.logging.AppLog
@@ -31,6 +39,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -39,10 +48,11 @@ class DualCoreVpnService : VpnService() {
     private val stateMachine = VpnSessionStateMachine(onStateChanged = VpnSessionStore::update)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operation: Job? = null
+    private var trafficOperation: Job? = null
     private var coordinator: VpnSessionCoordinator? = null
     private var initializationFailure: Throwable? = null
     private var serverName: String? = null
-    private var connectedAtMillis: Long = 0L
+    private var connectedAtEpochMillis: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -57,7 +67,10 @@ class DualCoreVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
-                connect(intent.getStringExtra(EXTRA_XRAY_CONFIG))
+                connect(
+                    config = intent.getStringExtra(EXTRA_XRAY_CONFIG),
+                    server = intent.toSessionServer(),
+                )
             }
             ACTION_DISCONNECT -> disconnect()
             else -> stopSelf()
@@ -65,10 +78,10 @@ class DualCoreVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun connect(config: String?) {
+    private fun connect(config: String?, server: VpnSessionServer?) {
         if (coordinator != null) return
         val engineKind = VpnSettingsRepository(this).load().engine
-        stateMachine.dispatch(VpnEvent.ConnectRequested(engineKind))
+        stateMachine.dispatch(VpnEvent.ConnectRequested(engineKind, server))
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_connecting)))
         operation?.cancel()
         operation = serviceScope.launch {
@@ -81,9 +94,9 @@ class DualCoreVpnService : VpnService() {
                 val session = createCoordinator(engineKind)
                 coordinator = session
                 session.start(config)
-                val connectedAt = System.currentTimeMillis()
-                stateMachine.dispatch(VpnEvent.Connected(connectedAt))
-                connectedAtMillis = connectedAt
+                stateMachine.dispatch(VpnEvent.Connected(SystemClock.elapsedRealtime()))
+                connectedAtEpochMillis = System.currentTimeMillis()
+                startTrafficMonitoring()
                 AppLog.info("VPN", "Session connected")
                 updateNotification(getString(R.string.status_connected))
             } catch (cancelled: CancellationException) {
@@ -174,11 +187,45 @@ class DualCoreVpnService : VpnService() {
 
     private suspend fun stopSession() {
         try {
+            trafficOperation?.cancelAndJoin()
+            trafficOperation = null
+            VpnTrafficStore.reset()
             coordinator?.stop()
         } finally {
             coordinator = null
         }
     }
+
+    private fun startTrafficMonitoring() {
+        trafficOperation?.cancel()
+        VpnTrafficStore.reset()
+        trafficOperation = serviceScope.launch {
+            val initial = readTunnelByteCounters() ?: return@launch
+            var counters = TrafficCounterState(previousRx = initial.rxBytes, previousTx = initial.txBytes)
+            var previousSampleAt = SystemClock.elapsedRealtime()
+            while (true) {
+                delay(1_000)
+                val current = readTunnelByteCounters() ?: continue
+                val sampledAt = SystemClock.elapsedRealtime()
+                val elapsedMillis = sampledAt - previousSampleAt
+                val previous = counters
+                counters = advanceTrafficCounters(counters, current.rxBytes, current.txBytes)
+                VpnTrafficStore.update(
+                    VpnTrafficSnapshot(
+                        downloadBytesPerSecond = bytesPerSecond(previous.previousRx, current.rxBytes, elapsedMillis),
+                        uploadBytesPerSecond = bytesPerSecond(previous.previousTx, current.txBytes, elapsedMillis),
+                        downloadedBytes = counters.totalRx,
+                        uploadedBytes = counters.totalTx,
+                    )
+                )
+                previousSampleAt = sampledAt
+            }
+        }
+    }
+
+    private fun readTunnelByteCounters() = runCatching { NativeTun2SocksGateway.stats() }
+        .mapCatching { hevTunnelByteCounters(it) }
+        .getOrNull()
 
     override fun onDestroy() {
         runBlocking(Dispatchers.IO) {
@@ -200,13 +247,21 @@ class DualCoreVpnService : VpnService() {
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
+    private fun Intent.toSessionServer(): VpnSessionServer? {
+        val profileId = getStringExtra(EXTRA_SERVER_ID) ?: return null
+        val protocol = getStringExtra(EXTRA_SERVER_PROTOCOL) ?: return null
+        val address = getStringExtra(EXTRA_SERVER_ADDRESS) ?: return null
+        val port = getIntExtra(EXTRA_SERVER_PORT, -1).takeIf { it in 1..65_535 } ?: return null
+        return VpnSessionServer(profileId, protocol, address, port)
+    }
+
     private fun buildNotification(status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_stat_vpn)
         .setContentTitle(getString(R.string.app_name))
         .setContentText(serverName?.let { "$status · $it" } ?: status)
         .setSubText(serverName)
-        .setUsesChronometer(connectedAtMillis > 0L)
-        .setWhen(if (connectedAtMillis > 0L) connectedAtMillis else System.currentTimeMillis())
+        .setUsesChronometer(connectedAtEpochMillis > 0L)
+        .setWhen(if (connectedAtEpochMillis > 0L) connectedAtEpochMillis else System.currentTimeMillis())
         .setOngoing(true)
         .setContentIntent(
             PendingIntent.getActivity(
@@ -262,6 +317,10 @@ class DualCoreVpnService : VpnService() {
         const val ACTION_DISCONNECT = "com.envy.dualcorevpn.DISCONNECT"
         const val EXTRA_XRAY_CONFIG = "com.envy.dualcorevpn.XRAY_CONFIG"
         const val EXTRA_SERVER_NAME = "com.envy.dualcorevpn.SERVER_NAME"
+        const val EXTRA_SERVER_ID = "com.envy.dualcorevpn.SERVER_ID"
+        const val EXTRA_SERVER_PROTOCOL = "com.envy.dualcorevpn.SERVER_PROTOCOL"
+        const val EXTRA_SERVER_ADDRESS = "com.envy.dualcorevpn.SERVER_ADDRESS"
+        const val EXTRA_SERVER_PORT = "com.envy.dualcorevpn.SERVER_PORT"
         private const val CHANNEL_ID = "vpn_connection"
         private const val NOTIFICATION_ID = 1001
     }

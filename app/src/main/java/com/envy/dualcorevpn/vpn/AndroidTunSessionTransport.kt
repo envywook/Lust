@@ -14,6 +14,8 @@ internal object NativeTun2SocksGateway : Tun2SocksGateway {
         TProxyService.start(configPath, fileDescriptor)
 
     override fun stop() = TProxyService.stop()
+
+    fun stats(): LongArray = TProxyService.getStats()
 }
 
 internal class Tun2SocksStarter(

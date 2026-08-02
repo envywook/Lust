@@ -24,4 +24,16 @@ class TProxyServiceContractTest {
         assertTrue(Modifier.isNative(methods.getValue("TProxyStopService").modifiers))
         assertTrue(Modifier.isNative(methods.getValue("TProxyGetStats").modifiers))
     }
+
+    @Test
+    fun `public stats API exposes HEV tunnel counters`() {
+        val method = Class.forName(
+            "com.v2ray.ang.service.TProxyService",
+            false,
+            javaClass.classLoader,
+        ).getDeclaredMethod("getStats")
+
+        assertEquals(LongArray::class.java, method.returnType)
+        assertTrue(Modifier.isPublic(method.modifiers))
+    }
 }

@@ -16,6 +16,46 @@ class VpnSessionStateMachineTest {
     }
 
     @Test
+    fun `connected state preserves the actual server selected for the session`() {
+        val server = VpnSessionServer(
+            profileId = "profile-1",
+            protocol = "vless",
+            address = "edge.example",
+            port = 443,
+        )
+        val machine = VpnSessionStateMachine()
+
+        machine.dispatch(VpnEvent.ConnectRequested(EngineKind.XRAY, server))
+
+        assertEquals(
+            VpnSessionState.Connected(
+                engine = EngineKind.XRAY,
+                startedAtElapsedRealtimeMillis = 2_000L,
+                server = server,
+            ),
+            machine.dispatch(VpnEvent.Connected(startedAtElapsedRealtimeMillis = 2_000L)),
+        )
+    }
+
+    @Test
+    fun `retry from error preserves the new server selected for the session`() {
+        val server = VpnSessionServer(
+            profileId = "profile-retry",
+            protocol = "trojan",
+            address = "retry.example",
+            port = 8443,
+        )
+        val machine = VpnSessionStateMachine(
+            initial = VpnSessionState.Error(EngineKind.XRAY, "startup failed"),
+        )
+
+        assertEquals(
+            VpnSessionState.Connecting(EngineKind.SING_BOX, server),
+            machine.dispatch(VpnEvent.ConnectRequested(EngineKind.SING_BOX, server)),
+        )
+    }
+
+    @Test
     fun `publishes every state transition`() {
         val published = mutableListOf<VpnSessionState>()
         val machine = VpnSessionStateMachine(onStateChanged = { published.add(it) })
