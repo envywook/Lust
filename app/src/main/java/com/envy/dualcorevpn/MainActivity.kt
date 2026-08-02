@@ -133,6 +133,8 @@ import com.envy.dualcorevpn.subscription.SubscriptionRepository
 import com.envy.dualcorevpn.subscription.SubscriptionRefreshWorker
 import com.envy.dualcorevpn.subscription.QrImportClassifier
 import com.envy.dualcorevpn.subscription.QrImportPayload
+import com.envy.dualcorevpn.subscription.ImportPayload
+import com.envy.dualcorevpn.subscription.ImportPayloadClassifier
 import com.envy.dualcorevpn.update.UpdateRepository
 import com.envy.dualcorevpn.ui.HomeDashboard
 import com.envy.dualcorevpn.ui.AdvancedFeaturesScreen
@@ -209,7 +211,7 @@ class MainActivity : ComponentActivity() {
     private var updateStatus by mutableStateOf("")
     private var pendingSubscriptionImport by mutableStateOf<SubscriptionImportRequest?>(null)
     private var pendingMieruImport by mutableStateOf<MieruImportRequest?>(null)
-    private var pendingQrProfile by mutableStateOf<ServerProfile?>(null)
+    private var pendingServerProfiles by mutableStateOf<List<ServerProfile>>(emptyList())
     private var clearViewedIntentDataOnResume = false
     private var pendingBackupRestore by mutableStateOf<String?>(null)
 
@@ -339,21 +341,30 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
-                pendingQrProfile?.let { profile ->
+                pendingServerProfiles.takeIf(List<ServerProfile>::isNotEmpty)?.let { profiles ->
+                    val profile = profiles.first()
                     AlertDialog(
-                        onDismissRequest = { pendingQrProfile = null },
+                        onDismissRequest = { pendingServerProfiles = emptyList() },
                         title = { Text(stringResource(R.string.qr_import_title)) },
-                        text = { Text(stringResource(R.string.qr_import_profile_summary, profile.name, profile.protocol, profile.address, profile.port)) },
+                        text = {
+                            Text(
+                                if (profiles.size == 1) {
+                                    stringResource(R.string.qr_import_profile_summary, profile.name, profile.protocol, profile.address, profile.port)
+                                } else {
+                                    stringResource(R.string.server_import_profiles_summary, profiles.size, profile.name, profile.protocol, profile.address, profile.port)
+                                },
+                            )
+                        },
                         confirmButton = {
                             Button(onClick = {
-                                repository.importProfile(profile)
-                                pendingQrProfile = null
+                                repository.importProfiles(profiles)
+                                pendingServerProfiles = emptyList()
                                 reloadUi++
                                 message = getString(R.string.qr_import_success)
                             }) { Text(stringResource(R.string.qr_import_confirm)) }
                         },
                         dismissButton = {
-                            TextButton(onClick = { pendingQrProfile = null }) {
+                            TextButton(onClick = { pendingServerProfiles = emptyList() }) {
                                 Text(stringResource(R.string.mieru_import_cancel))
                             }
                         },
@@ -441,17 +452,33 @@ class MainActivity : ComponentActivity() {
         if (intent?.action != Intent.ACTION_VIEW) return
         val source = intent.dataString ?: return
         clearViewedIntentDataOnResume = true
-        if (source.startsWith("mieru://", ignoreCase = true)) {
-            runCatching { MieruDeepLink.parse(source) }
-                .onSuccess { pendingMieruImport = it }
-                .onFailure { message = getString(R.string.mieru_import_invalid) }
-            return
-        }
-        pendingSubscriptionImport = SubscriptionDeepLink.parse(source) ?: return
+        handleImportPayload(source)
     }
 
-    private fun addSubscription(name: String, url: String) = runSubscriptionAction {
-        repository.addAndUpdate(name, url)
+    private fun addSubscription(name: String, value: String) {
+        runCatching { ImportPayloadClassifier.classify(value) }
+            .onSuccess { payload ->
+                when (payload) {
+                    is ImportPayload.Subscription -> runSubscriptionAction {
+                        repository.addAndUpdate(name.ifBlank { payload.request.name }, payload.request.url)
+                    }
+                    is ImportPayload.MieruProfile -> pendingMieruImport = payload.request
+                    is ImportPayload.Profiles -> pendingServerProfiles = payload.profiles
+                }
+            }
+            .onFailure { message = getString(R.string.server_import_invalid) }
+    }
+
+    private fun handleImportPayload(source: String) {
+        runCatching { ImportPayloadClassifier.classify(source) }
+            .onSuccess { payload ->
+                when (payload) {
+                    is ImportPayload.Subscription -> pendingSubscriptionImport = payload.request
+                    is ImportPayload.MieruProfile -> pendingMieruImport = payload.request
+                    is ImportPayload.Profiles -> pendingServerProfiles = payload.profiles
+                }
+            }
+            .onFailure { message = getString(R.string.server_import_invalid) }
     }
 
     private fun updateSubscription(subscription: Subscription) = runSubscriptionAction {
@@ -513,7 +540,7 @@ class MainActivity : ComponentActivity() {
                         name = payload.request.name.ifBlank { getString(R.string.qr_subscription_name) },
                     )
                     is QrImportPayload.MieruProfile -> pendingMieruImport = payload.request
-                    is QrImportPayload.Profile -> pendingQrProfile = payload.profile
+                    is QrImportPayload.Profile -> pendingServerProfiles = listOf(payload.profile)
                 }
             }
             .onFailure { message = getString(R.string.qr_import_invalid) }
@@ -521,13 +548,13 @@ class MainActivity : ComponentActivity() {
 
     private fun exportLogs() {
         val exportDirectory = java.io.File(cacheDir, "exports").apply { mkdirs() }
-        val exportFile = java.io.File(exportDirectory, "lust-diagnostics.log").apply {
+        val exportFile = java.io.File(exportDirectory, "maxspeedvpn-diagnostics.log").apply {
             writeText(AppLog.exportText())
         }
         val uri = FileProvider.getUriForFile(this, "$packageName.files", exportFile)
         val intent = ShareCompat.IntentBuilder(this)
             .setType("text/plain")
-            .setSubject("Lust diagnostics")
+            .setSubject("MaxSpeedVPN diagnostics")
             .setStream(uri)
             .intent
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -866,7 +893,7 @@ private fun LustApp(
         AlertDialog(
             onDismissRequest = onDismissMessage,
             confirmButton = { TextButton(onClick = onDismissMessage) { Text("OK") } },
-            title = { Text(if (text.contains("добавлена") || text.contains("обновлена")) "Готово" else "Lust") },
+            title = { Text(if (text.contains("добавлена") || text.contains("обновлена")) "Готово" else "MaxSpeedVPN") },
             text = { Text(text) },
         )
     }
@@ -983,7 +1010,19 @@ private fun SubscriptionsScreen(
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(subscription.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                        Text(subscription.url, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val usage = subscription.usage
+                        if (usage != null) {
+                            val context = LocalContext.current
+                            val used = usage.usedBytes?.let { android.text.format.Formatter.formatFileSize(context, it) } ?: "—"
+                            val total = usage.totalBytes?.let { android.text.format.Formatter.formatFileSize(context, it) } ?: "∞"
+                            Text(stringResource(R.string.subscription_usage, used, total), color = Muted, fontSize = 12.sp)
+                            usage.expiresAtEpochSeconds?.let { expires ->
+                                val formatted = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(expires * 1_000L))
+                                Text(stringResource(R.string.subscription_expires, formatted), color = Muted, fontSize = 12.sp)
+                            }
+                        } else {
+                            Text(stringResource(R.string.subscription_usage_unavailable), color = Muted, fontSize = 12.sp)
+                        }
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { onUpdate(subscription) }, enabled = !loading) { Text(stringResource(R.string.subscriptions_update)) }
@@ -1010,29 +1049,30 @@ private fun AddSubscriptionDialog(
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Новая подписка") },
+        title = { Text(stringResource(R.string.import_link_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название (необязательно)") }, singleLine = true)
-                OutlinedTextField(value = url, onValueChange = { url = it.trim(); clipboardError = false }, label = { Text("URL подписки") }, placeholder = { Text("https://…") }, singleLine = true)
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.import_link_name)) }, singleLine = true)
+                OutlinedTextField(value = url, onValueChange = { url = it.trim(); clipboardError = false }, label = { Text(stringResource(R.string.import_link_value)) }, placeholder = { Text("https://… / vless://… / mieru://…") }, singleLine = true)
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = clipboard.primaryClip
                     val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)
-                    val request = SubscriptionClipboard.parse(text)
-                    if (request == null) clipboardError = true else {
-                        url = request.url
-                        if (name.isBlank()) name = request.name
+                    val raw = text?.toString()?.trim().orEmpty()
+                    val payload = runCatching { ImportPayloadClassifier.classify(raw) }.getOrNull()
+                    if (payload == null) clipboardError = true else {
+                        url = raw
+                        if (name.isBlank() && payload is ImportPayload.Subscription) name = payload.request.name
                         clipboardError = false
                     }
                 }, modifier = Modifier.fillMaxWidth()) {
-                    Text("ВСТАВИТЬ ИЗ БУФЕРА")
+                    Text(stringResource(R.string.import_link_clipboard))
                 }
-                if (clipboardError) Text("В буфере нет ссылки подписки", color = Danger, fontSize = 12.sp)
+                if (clipboardError) Text(stringResource(R.string.import_link_clipboard_invalid), color = Danger, fontSize = 12.sp)
             }
         },
-        confirmButton = { Button(onClick = { onAdd(name.trim(), url.trim()) }, enabled = url.startsWith("https://") || url.startsWith("http://")) { Text("ДОБАВИТЬ") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ОТМЕНА") } },
+        confirmButton = { Button(onClick = { onAdd(name.trim(), url.trim()) }, enabled = runCatching { ImportPayloadClassifier.classify(url) }.isSuccess) { Text(stringResource(R.string.import_link_add)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.mieru_import_cancel)) } },
     )
 }
 
