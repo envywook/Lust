@@ -21,4 +21,16 @@ class ServerCarouselTest {
     fun `invalid width never changes selection`() {
         assertEquals(0, carouselStep(offsetPx = -100f, velocityPxPerSecond = -1_000f, slotWidthPx = 0f))
     }
+
+    @Test
+    fun `rapid drag delta is accumulated synchronously`() {
+        assertEquals(30f, boundedCarouselDragOffset(current = 0f, delta = 30f, slotWidthPx = 100f))
+        assertEquals(55f, boundedCarouselDragOffset(current = 30f, delta = 25f, slotWidthPx = 100f))
+        assertEquals(-100f, boundedCarouselDragOffset(current = -90f, delta = -30f, slotWidthPx = 100f))
+    }
+
+    @Test
+    fun `invalid carousel width keeps drag offset stable`() {
+        assertEquals(20f, boundedCarouselDragOffset(current = 20f, delta = 30f, slotWidthPx = 0f))
+    }
 }

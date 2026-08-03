@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Lust"
+rootProject.name = "MaxSpeedVPN"
 include(":app")

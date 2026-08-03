@@ -1,6 +1,6 @@
 # Third-party notices
 
-Lust uses or prepares the following third-party components. Their licenses apply independently of Lust's GPL-3.0 license.
+MaxSpeedVPN uses or prepares the following third-party components. Their licenses apply independently of MaxSpeedVPN's GPL-3.0 license.
 
 ## AndroidLibXrayLite
 

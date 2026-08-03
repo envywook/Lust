@@ -31,7 +31,7 @@ object MieruDeepLink {
         val source = value ?: throw IllegalArgumentException("Mieru URI is missing")
         require(source.length <= 4_096) { "Mieru URI is too long" }
         val uri = URI(source)
-        require(uri.scheme.equals("mieru", ignoreCase = true)) { "Unsupported Mieru URI scheme" }
+        require(uri.scheme?.lowercase() in setOf("mieru", "meiru")) { "Unsupported Mieru URI scheme" }
         require(uri.rawPath.isNullOrEmpty()) { "Mieru URI path is not supported" }
         val host = uri.host?.takeIf(String::isNotBlank) ?: throw IllegalArgumentException("Mieru host is required")
         val port = uri.port
@@ -67,7 +67,7 @@ object MieruDeepLink {
             put("mtu", mtu)
             put("multiplexing", mux)
         }
-        val config = JSONObject().put("lust_format", "sing-box").put("outbound", outbound).toString()
+        val config = JSONObject().put("maxspeedvpn_format", "sing-box").put("outbound", outbound).toString()
         val id = UUID.nameUUIDFromBytes("$LOCAL_SUBSCRIPTION_ID:$host:$port:$username:$transport".toByteArray()).toString()
         return MieruImportRequest(
             profile = ServerProfile(id, LOCAL_SUBSCRIPTION_ID, name, "mieru", host, port, config),

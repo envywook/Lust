@@ -87,7 +87,7 @@ class SubscriptionParserTest {
         assertEquals(listOf("hysteria2", "tuic", "naive"), profiles.map { it.protocol })
         profiles.forEach { profile ->
             val root = JSONObject(profile.config)
-            assertEquals("sing-box", root.getString("lust_format"))
+            assertEquals("sing-box", root.getString("maxspeedvpn_format"))
             assertEquals(profile.protocol, root.getJSONObject("outbound").getString("type"))
         }
         val hy2 = JSONObject(profiles[0].config).getJSONObject("outbound")

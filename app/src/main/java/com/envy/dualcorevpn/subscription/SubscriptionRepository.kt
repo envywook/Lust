@@ -2,6 +2,7 @@ package com.envy.dualcorevpn.subscription
 
 import android.content.Context
 import android.util.Base64
+import com.envy.dualcorevpn.BuildConfig
 import com.envy.dualcorevpn.server.ServerFavoritesCodec
 import java.net.HttpURLConnection
 import java.net.URI
@@ -37,6 +38,7 @@ private fun JSONObject.optNullableLong(key: String): Long? =
 
 class SubscriptionRepository(context: Context) {
     private val preferences = context.getSharedPreferences("subscriptions", Context.MODE_PRIVATE)
+    private val deviceIdentity = SubscriptionDeviceIdentity(context.applicationContext)
 
     fun subscriptions(): List<Subscription> = runCatching {
         val values = JSONArray(preferences.getString(KEY_SUBSCRIPTIONS, "[]"))
@@ -95,10 +97,14 @@ class SubscriptionRepository(context: Context) {
         check(preferences.edit().putString(KEY_SELECTED, serverId).commit()) { "Selected server could not be persisted" }
     }
 
-    fun importProfile(profile: ServerProfile) {
-        val updated = servers().filterNot { it.id == profile.id } + profile
+    fun importProfile(profile: ServerProfile) = importProfiles(listOf(profile))
+
+    fun importProfiles(profiles: List<ServerProfile>) = synchronized(preferenceLock) {
+        require(profiles.isNotEmpty()) { "At least one server profile is required" }
+        val importedIds = profiles.mapTo(hashSetOf(), ServerProfile::id)
+        val updated = servers().filterNot { it.id in importedIds } + profiles
         saveServers(updated)
-        select(profile.id)
+        select(profiles.first().id)
     }
 
     suspend fun addAndUpdate(name: String, url: String): SubscriptionUpdateResult = updateMutex.withLock {
@@ -110,7 +116,7 @@ class SubscriptionRepository(context: Context) {
         val subscription = (existing ?: Subscription(UUID.randomUUID().toString(), name.ifBlank { hostName(url) }, url))
             .copy(name = name.ifBlank { existing?.name ?: hostName(url) })
         val fetched = fetch(subscription)
-        val enrichedSubscription = subscription.copy(usage = fetched.usage ?: subscription.usage)
+        val enrichedSubscription = subscription.copy(usage = fetched.usage)
         synchronized(preferenceLock) {
             val plan = SubscriptionRefreshPlanner.plan(
                 subscriptions = subscriptions(),
@@ -132,7 +138,7 @@ class SubscriptionRepository(context: Context) {
                 subscriptions = subscriptions(),
                 servers = servers(),
                 selectedServerId = selectedServerId(),
-                subscription = subscription.copy(usage = fetched.usage ?: subscription.usage),
+                subscription = subscription.copy(usage = fetched.usage),
                 report = fetched.report,
                 updatedAt = System.currentTimeMillis(),
             )
@@ -154,21 +160,63 @@ class SubscriptionRepository(context: Context) {
     )
 
     private suspend fun fetch(subscription: Subscription): FetchedSubscription {
-        val connection = URL(subscription.url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 20_000
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("User-Agent", "Lust/0.1 Android")
-        return try {
-            require(connection.responseCode in 200..299) { "Сервер подписки ответил HTTP ${connection.responseCode}" }
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            FetchedSubscription(
+        var currentUrl = URL(subscription.url)
+        repeat(MAX_REDIRECTS + 1) { redirectCount ->
+            val connection = currentUrl.openConnection() as HttpURLConnection
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 20_000
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("User-Agent", "MaxSpeedVPN/${BuildConfig.VERSION_NAME} Android")
+            if (currentUrl.protocol.equals("https", ignoreCase = true)) {
+                deviceIdentity.headers(currentUrl.host).let { headers ->
+                    connection.setRequestProperty("X-Hwid", headers.hwid)
+                    connection.setRequestProperty("X-Device-Os", headers.deviceOs)
+                    connection.setRequestProperty("X-Ver-Os", headers.osVersion)
+                    connection.setRequestProperty("X-Device-Model", headers.deviceModel)
+                }
+            }
+            try {
+                val responseCode = connection.responseCode
+                if (responseCode in 300..399) {
+                    require(redirectCount < MAX_REDIRECTS) { "Слишком много перенаправлений подписки" }
+                    val location = connection.getHeaderField("Location") ?: error("Некорректное перенаправление подписки")
+                    val nextUrl = URL(currentUrl, location)
+                    require(!(currentUrl.protocol.equals("https", true) && !nextUrl.protocol.equals("https", true))) {
+                        "Небезопасное перенаправление HTTPS-подписки"
+                    }
+                    require(nextUrl.protocol.equals("https", true) || nextUrl.protocol.equals("http", true)) {
+                        "Неподдерживаемая схема перенаправления подписки"
+                    }
+                    currentUrl = nextUrl
+                    return@repeat
+                }
+            require(!connection.getHeaderField("x-hwid-max-devices-reached").equals("true", ignoreCase = true)) {
+                "Достигнут лимит устройств подписки"
+            }
+            require(!connection.getHeaderField("x-hwid-not-supported").equals("true", ignoreCase = true)) {
+                "Панель требует поддерживаемый идентификатор устройства"
+            }
+            require(responseCode in 200..299) { "Сервер подписки ответил HTTP $responseCode" }
+            val body = connection.inputStream.bufferedReader().use { reader ->
+                buildString {
+                    val buffer = CharArray(8_192)
+                    while (true) {
+                        val read = reader.read(buffer)
+                        if (read < 0) break
+                        require(length + read <= MAX_SUBSCRIPTION_CHARS) { "Ответ подписки слишком большой" }
+                        append(buffer, 0, read)
+                    }
+                }
+            }
+                return FetchedSubscription(
                 report = SubscriptionParser.parseReport(subscription.id, body),
                 usage = SubscriptionUsageParser.parse(connection.getHeaderField("subscription-userinfo")),
             )
-        } finally {
-            connection.disconnect()
+            } finally {
+                connection.disconnect()
+            }
         }
+        error("Слишком много перенаправлений подписки")
     }
 
     private fun persist(plan: SubscriptionRefreshPlan) {
@@ -222,6 +270,8 @@ class SubscriptionRepository(context: Context) {
         const val KEY_SERVERS = "servers"
         const val KEY_SELECTED = "selected_server"
         const val KEY_FAVORITES = "favorite_servers"
+        const val MAX_SUBSCRIPTION_CHARS = 5 * 1024 * 1024
+        const val MAX_REDIRECTS = 5
     }
 }
 
@@ -396,8 +446,10 @@ object SubscriptionParser {
         val uri = URI(source)
         val address = uri.host ?: error("В Naive-ссылке отсутствует адрес сервера")
         val port = uri.port.takeIf { it > 0 } ?: 443
-        val credentials = uri.rawUserInfo?.let(::decode)?.split(':', limit = 2).orEmpty()
-        require(credentials.size == 2) { "Naive-ссылка должна содержать имя пользователя и пароль" }
+        val credentials = uri.rawUserInfo?.split(':', limit = 2)?.map(::decodeUriComponent).orEmpty()
+        require(credentials.size == 2 && credentials.all(String::isNotBlank)) {
+            "Naive-ссылка должна содержать имя пользователя и пароль"
+        }
         val query = parseQuery(uri.rawQuery)
         require(!query.boolean("insecure", "allowInsecure")) {
             "NaiveProxy не поддерживает отключение проверки TLS-сертификата"
@@ -465,7 +517,7 @@ object SubscriptionParser {
 
             }
             val displayPort = first.substringBefore('-').toInt()
-            val config = JSONObject().put("lust_format", "sing-box").put("outbound", outbound).toString()
+            val config = JSONObject().put("maxspeedvpn_format", "sing-box").put("outbound", outbound).toString()
             val id = UUID.nameUUIDFromBytes(
                 "$subscriptionId:mieru:$address:$transport:${transportPorts.joinToString()}:$name".toByteArray(),
             ).toString()
@@ -494,7 +546,7 @@ object SubscriptionParser {
         outbound: JSONObject,
     ): ServerProfile {
         val name = decode(uri.rawFragment ?: "$address:$port")
-        val config = JSONObject().put("lust_format", "sing-box").put("outbound", outbound).toString()
+        val config = JSONObject().put("maxspeedvpn_format", "sing-box").put("outbound", outbound).toString()
         val id = UUID.nameUUIDFromBytes("$subscriptionId:$protocol:$address:$port:$name".toByteArray()).toString()
         return ServerProfile(id, subscriptionId, name, protocol, address, port, config)
     }

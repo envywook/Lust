@@ -97,6 +97,17 @@
     <string name="mieru_import_success">Сервер Mieru импортирован</string>
     <string name="mieru_import_invalid">Некорректная или неподдерживаемая ссылка Mieru</string>
     <string name="quick_tile_label">MaxSpeedVPN</string>
+    <string name="import_link_title">Добавить подписку или сервер</string>
+    <string name="import_link_name">Название (необязательно)</string>
+    <string name="import_link_value">URL подписки или URI сервера</string>
+    <string name="import_link_clipboard">ВСТАВИТЬ ИЗ БУФЕРА</string>
+    <string name="import_link_clipboard_invalid">В буфере нет поддерживаемой ссылки</string>
+    <string name="import_link_add">ДОБАВИТЬ</string>
+    <string name="server_import_invalid">Некорректная или неподдерживаемая ссылка подписки/сервера</string>
+    <string name="server_import_profiles_summary">Профилей: %1$d\nПервый: %2$s\nПротокол: %3$s\nСервер: %4$s:%5$d</string>
+    <string name="subscription_usage">Использовано: %1$s из %2$s</string>
+    <string name="subscription_expires">Действует до: %1$s</string>
+    <string name="subscription_usage_unavailable">Подписка не передала трафик и срок действия</string>
     <string name="subscription_refresh_channel">Обновления подписок</string>
     <string name="subscription_refresh_changed">Обновлено подписок: %1$d</string>
     <string name="subscription_refresh_failed">Не удалось обновить: %1$s</string>

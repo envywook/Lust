@@ -1,6 +1,6 @@
-# Lust Android parity backlog
+# MaxSpeedVPN Android parity backlog
 
-Baseline: Lust `472d752`, v2RayTun Android 5.24.76, and v2rayN commit `fd2c942231b0593a5ab65c07d677acf0074c34ce`.
+Baseline: MaxSpeedVPN (formerly Lust) `472d752`, v2RayTun Android 5.24.76, and v2rayN commit `fd2c942231b0593a5ab65c07d677acf0074c34ce`.
 
 Parity means comparable user capability, not copied UI. v2RayTun is the primary Android reference. Desktop-only v2rayN features such as tray controls, OS process routing, hotkeys, system proxy, WebDAV, and executable-core management are excluded unless adapted to a real Android use case.
 

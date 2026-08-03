@@ -7,7 +7,7 @@ object XrayConfigValidator {
         if (config.isBlank()) return ValidationResult.Invalid("Configuration is empty")
         return try {
             val root = JSONObject(config)
-            if (root.optString("lust_format") == "sing-box") {
+            if (root.optString("maxspeedvpn_format") == "sing-box" || root.optString("lust_format") == "sing-box") {
                 return ValidationResult.Invalid("Этот профиль поддерживается только ядром sing-box")
             }
             val outbounds = root.optJSONArray("outbounds")

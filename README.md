@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/lust-banner.svg" alt="Lust — Android VPN client" width="100%">
+  <img src="docs/assets/maxspeedvpn-banner.svg" alt="MaxSpeedVPN — Android VPN client" width="100%">
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ## О проекте
 
-**Lust** — Android VPN-клиент с тёмным интерфейсом, управлением подписками и нативным сетевым конвейером на базе Xray-core или sing-box и HEV tun2socks.
+**MaxSpeedVPN** — Android VPN-клиент с тёмным интерфейсом, управлением подписками и нативным сетевым конвейером на базе Xray-core или sing-box и HEV tun2socks.
 
 Проект создаётся как понятная, расширяемая альтернатива перегруженным универсальным клиентам: обычные действия доступны из основного интерфейса, а технические события и ошибки не скрываются от пользователя.
 
@@ -154,8 +154,8 @@ ABI-specific APK примерно на 65–68% меньше universal. Для �
 ### Команды
 
 ```bash
-git clone https://github.com/envywook/Lust.git
-cd Lust
+git clone https://github.com/envywook/Lust.git MaxSpeedVPN
+cd MaxSpeedVPN
 
 ./scripts/prepare-native-deps.sh
 ./gradlew testDebugUnitTest assembleDebug
@@ -214,7 +214,7 @@ Workflow [Android CI and Release](.github/workflows/android.yml):
 Issues и pull requests приветствуются. Для отчёта об ошибке приложите:
 
 1. модель устройства и версию Android;
-2. версию Lust;
+2. версию MaxSpeedVPN;
 3. тип профиля без секретных параметров;
 4. точную последовательность действий;
 5. обезличенный фрагмент журнала.
@@ -227,11 +227,11 @@ Issues и pull requests приветствуются. Для отчёта об �
 
 ## Лицензия
 
-Исходный код Lust распространяется по лицензии [GNU GPL-3.0](LICENSE).
+Исходный код MaxSpeedVPN распространяется по лицензии [GNU GPL-3.0](LICENSE).
 Сторонние компоненты сохраняют собственные лицензии — см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
 <p align="center">
-  <strong>Lust</strong> · Android · Kotlin · Xray-core · HEV tun2socks
+  <strong>MaxSpeedVPN</strong> · Android · Kotlin · Xray-core · sing-box · HEV tun2socks
 </p>

@@ -53,6 +53,8 @@ object AppLog {
             if (logFile.get() != null) return
             directory.mkdirs()
             val file = File(directory, "maxspeedvpn.log")
+            val legacy = File(directory, "lust.log")
+            if (!file.exists() && legacy.exists()) legacy.renameTo(file)
             logFile.set(file)
             mutableEntries.value = readFrom(file).takeLast(MAX_MEMORY_ENTRIES)
         }
@@ -94,7 +96,7 @@ object AppLog {
     }
 
     private fun rotate(file: File) {
-        val previous = File(file.parentFile, "maxspeedvpn.previous.log")
+        val previous = File(file.parentFile, "lust.previous.log")
         previous.delete()
         file.renameTo(previous)
     }

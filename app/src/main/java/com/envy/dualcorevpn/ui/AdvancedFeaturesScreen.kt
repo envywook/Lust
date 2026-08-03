@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.envy.dualcorevpn.R
@@ -132,9 +133,15 @@ internal fun AdvancedFeaturesScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = selected, onCheckedChange = null)
-                    Column {
-                        Text(app.label, color = Color.White, maxLines = 1)
-                        Text(app.packageName, color = Color(0xFFA0A5A2), fontSize = 9.sp, maxLines = 1)
+                    Column(Modifier.weight(1f)) {
+                        Text(app.label, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            app.packageName,
+                            color = Color(0xFFA0A5A2),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }

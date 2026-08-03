@@ -41,9 +41,12 @@ object UpdateCatalog {
         }.maxByOrNull { it.version }
 
     fun selectApk(assets: List<ReleaseAsset>, abis: List<String>, tag: String? = null): ReleaseAsset? {
-        val prefix = tag?.let { "MaxSpeedVPN-$it-" }.orEmpty()
-        abis.forEach { abi -> assets.singleOrNull { it.name == "$prefix$abi.apk" }?.let { return it } }
-        return if (abis.isEmpty()) null else assets.singleOrNull { it.name == "${prefix}universal.apk" }
+        val prefixes = tag?.let { listOf("MaxSpeedVPN-$it-", "Lust-$it-") } ?: listOf("")
+        prefixes.forEach { prefix ->
+            abis.forEach { abi -> assets.singleOrNull { it.name == "$prefix$abi.apk" }?.let { return it } }
+            if (abis.isNotEmpty()) assets.singleOrNull { it.name == "${prefix}universal.apk" }?.let { return it }
+        }
+        return null
     }
 
     fun requireTrustedUrl(value: String) {

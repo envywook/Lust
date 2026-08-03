@@ -10,7 +10,7 @@ object SingBoxConfigConverter {
 
     fun convert(sourceConfig: String, policy: RoutingPolicy = RoutingPolicy()): String {
         val root = JSONObject(sourceConfig)
-        val outbound = if (root.optString("lust_format") == "sing-box") {
+        val outbound = if (root.optString("maxspeedvpn_format") == "sing-box" || root.optString("lust_format") == "sing-box") {
             root.getJSONObject("outbound").also { native ->
                 require(native.optString("type").isNotBlank()) { "Native sing-box outbound type is required" }
                 native.put("tag", "proxy")

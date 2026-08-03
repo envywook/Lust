@@ -97,6 +97,17 @@
     <string name="mieru_import_success">Mieru server imported</string>
     <string name="mieru_import_invalid">Invalid or unsupported Mieru link</string>
     <string name="quick_tile_label">MaxSpeedVPN</string>
+    <string name="import_link_title">Add subscription or server</string>
+    <string name="import_link_name">Name (optional)</string>
+    <string name="import_link_value">Subscription URL or server URI</string>
+    <string name="import_link_clipboard">PASTE FROM CLIPBOARD</string>
+    <string name="import_link_clipboard_invalid">Clipboard does not contain a supported link</string>
+    <string name="import_link_add">ADD</string>
+    <string name="server_import_invalid">Invalid or unsupported subscription/server link</string>
+    <string name="server_import_profiles_summary">Profiles: %1$d\nFirst: %2$s\nProtocol: %3$s\nServer: %4$s:%5$d</string>
+    <string name="subscription_usage">Used: %1$s of %2$s</string>
+    <string name="subscription_expires">Expires: %1$s</string>
+    <string name="subscription_usage_unavailable">Traffic and expiry are not provided by this subscription</string>
     <string name="subscription_refresh_channel">Subscription updates</string>
     <string name="subscription_refresh_changed">Updated subscriptions: %1$d</string>
     <string name="subscription_refresh_failed">Could not update: %1$s</string>

@@ -10,25 +10,13 @@ object QrImportClassifier {
     private const val MAX_LENGTH = 4_096
 
     fun classify(raw: String?): QrImportPayload {
-        val value = raw?.trim().orEmpty()
-        require(value.isNotEmpty() && value.length <= MAX_LENGTH && !value.contains('\n') && !value.contains('\r')) {
-            "Invalid QR payload"
+        return when (val payload = ImportPayloadClassifier.classify(raw, requireHttpsSubscription = true)) {
+            is ImportPayload.Subscription -> QrImportPayload.Subscription(payload.request)
+            is ImportPayload.MieruProfile -> QrImportPayload.MieruProfile(payload.request)
+            is ImportPayload.Profiles -> {
+                require(payload.profiles.size == 1) { "QR payload must contain exactly one supported profile" }
+                QrImportPayload.Profile(payload.profiles.single())
+            }
         }
-        if (value.startsWith("https://")) {
-            return QrImportPayload.Subscription(SubscriptionImportRequest(value))
-        }
-        if (value.startsWith("lust://", ignoreCase = true)) {
-            val request = SubscriptionDeepLink.parse(value) ?: throw IllegalArgumentException("Invalid subscription link")
-            require(request.url.startsWith("https://")) { "Insecure subscription URL" }
-            return QrImportPayload.Subscription(request)
-        }
-        if (value.startsWith("mieru://", ignoreCase = true)) {
-            return QrImportPayload.MieruProfile(MieruDeepLink.parse(value))
-        }
-        val report = SubscriptionParser.parseReport("qr-import", value)
-        require(report.profiles.size == 1 && report.unsupportedCount == 0 && report.invalidCount == 0) {
-            "QR payload must contain exactly one supported profile"
-        }
-        return QrImportPayload.Profile(report.profiles.single())
     }
 }

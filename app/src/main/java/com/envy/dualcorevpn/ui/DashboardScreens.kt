@@ -61,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -468,6 +469,7 @@ private fun ServerSlider(
         } else {
             val selectedIndex = servers.indexOfFirst { it.id == selected?.id }.coerceAtLeast(0)
             val dragOffset = remember { Animatable(0f) }
+            var pendingDragOffset by remember { mutableFloatStateOf(0f) }
             BoxWithConstraints(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 13.dp),
             ) {
@@ -480,14 +482,16 @@ private fun ServerSlider(
                         dragOffset.animateTo(target, tween(280, easing = FastOutSlowInEasing))
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onSelect(servers[(selectedIndex + step).floorMod(servers.size)])
+                        pendingDragOffset = 0f
                         dragOffset.snapTo(0f)
                     }
                 }
 
                 val dragState = rememberDraggableState { delta ->
-                    scope.launch {
-                        dragOffset.snapTo((dragOffset.value + delta).coerceIn(-slotWidthPx, slotWidthPx))
-                    }
+                    // Drag callbacks may arrive faster than a coroutine can resume. Maintain the
+                    // source-of-truth offset synchronously; the visual Animatable follows it.
+                    pendingDragOffset = boundedCarouselDragOffset(pendingDragOffset, delta, slotWidthPx)
+                    scope.launch { dragOffset.snapTo(pendingDragOffset) }
                 }
 
                 Column(
@@ -495,10 +499,12 @@ private fun ServerSlider(
                         state = dragState,
                         orientation = Orientation.Horizontal,
                         enabled = servers.size > 1,
+                        onDragStarted = { pendingDragOffset = dragOffset.value },
                         onDragStopped = { velocity ->
-                            val step = carouselStep(dragOffset.value, velocity, slotWidthPx)
+                            val step = carouselStep(pendingDragOffset, velocity, slotWidthPx)
                             if (step == 0) scope.launch {
                                 dragOffset.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                                pendingDragOffset = 0f
                             } else move(step)
                         },
                     ),
@@ -560,6 +566,9 @@ internal fun carouselStep(offsetPx: Float, velocityPxPerSecond: Float, slotWidth
         else -> 0
     }
 }
+
+internal fun boundedCarouselDragOffset(current: Float, delta: Float, slotWidthPx: Float): Float =
+    if (slotWidthPx > 0f) (current + delta).coerceIn(-slotWidthPx, slotWidthPx) else current
 
 private fun Int.floorMod(modulus: Int): Int = ((this % modulus) + modulus) % modulus
 
@@ -828,6 +837,9 @@ private fun ServerListCard(
             text = { Text(server.config, maxLines = 18, overflow = TextOverflow.Ellipsis) },
             confirmButton = {
                 TextButton(onClick = {
+                    // Return to the server list after handing off to Android's chooser; otherwise
+                    // the configuration dialog unexpectedly reappears when the chooser closes.
+                    configServer = null
                     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TEXT, server.config)

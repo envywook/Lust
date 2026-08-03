@@ -1,4 +1,4 @@
-# Nimbo feature audit for Lust
+# Nimbo feature audit for MaxSpeedVPN
 
 Audit date: 2026-07-24
 
@@ -8,7 +8,7 @@ Inspected commit: `307a6c42cbad56aae5fd1dcf9fef9cd488ff4a1a`
 
 ## Licensing decision
 
-No `LICENSE` or `COPYING` file exists in the inspected Git tree. Copyright therefore remains reserved by default. Lust must not copy Nimbo source, resources, branding, or screen implementations. Features are implemented independently from public behavior and standard formats, using Lust's architecture, naming, tests, and UI.
+No `LICENSE` or `COPYING` file exists in the inspected Git tree. Copyright therefore remains reserved by default. MaxSpeedVPN must not copy Nimbo source, resources, branding, or screen implementations. Features are implemented independently from public behavior and standard formats, using MaxSpeedVPN's architecture, naming, tests, and UI.
 
 ## Feature map
 

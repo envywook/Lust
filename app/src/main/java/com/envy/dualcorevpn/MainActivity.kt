@@ -1053,7 +1053,14 @@ private fun AddSubscriptionDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.import_link_name)) }, singleLine = true)
-                OutlinedTextField(value = url, onValueChange = { url = it.trim(); clipboardError = false }, label = { Text(stringResource(R.string.import_link_value)) }, placeholder = { Text("https://… / vless://… / mieru://…") }, singleLine = true)
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it.trim(); clipboardError = false },
+                    label = { Text(stringResource(R.string.import_link_value)) },
+                    placeholder = { Text("https://… / vless://… / mieru://…") },
+                    minLines = 2,
+                    maxLines = 5,
+                )
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = clipboard.primaryClip
