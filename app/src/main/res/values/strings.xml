@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Lust</string>
+    <string name="app_name">MaxSpeedVPN</string>
     <string name="vpn_channel_name">VPN connection</string>
     <string name="vpn_channel_description">VPN connection status</string>
     <string name="status_connecting">Connecting…</string>
@@ -96,7 +96,7 @@
     <string name="mieru_import_cancel">Cancel</string>
     <string name="mieru_import_success">Mieru server imported</string>
     <string name="mieru_import_invalid">Invalid or unsupported Mieru link</string>
-    <string name="quick_tile_label">Lust VPN</string>
+    <string name="quick_tile_label">MaxSpeedVPN</string>
     <string name="subscription_refresh_channel">Subscription updates</string>
     <string name="subscription_refresh_changed">Updated subscriptions: %1$d</string>
     <string name="subscription_refresh_failed">Could not update: %1$s</string>

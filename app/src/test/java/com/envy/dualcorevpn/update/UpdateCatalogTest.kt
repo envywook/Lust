@@ -19,8 +19,8 @@ class UpdateCatalogTest {
         val json = JSONArray("""[
           {"tag_name":"v0.1.11-alpha","draft":true,"prerelease":true,"html_url":"https://github.com/envywook/Lust/releases/tag/v0.1.11-alpha","body":"draft","assets":[]},
           {"tag_name":"v0.1.10-alpha","draft":false,"prerelease":true,"html_url":"https://github.com/envywook/Lust/releases/tag/v0.1.10-alpha","body":"notes","assets":[
-            {"name":"Lust-v0.1.10-alpha-arm64-v8a.apk","browser_download_url":"https://github.com/envywook/Lust/releases/download/v0.1.10-alpha/a.apk","size":12},
-            {"name":"Lust-v0.1.10-alpha-universal.apk","browser_download_url":"https://github.com/envywook/Lust/releases/download/v0.1.10-alpha/u.apk","size":20},
+            {"name":"MaxSpeedVPN-v0.1.10-alpha-arm64-v8a.apk","browser_download_url":"https://github.com/envywook/Lust/releases/download/v0.1.10-alpha/a.apk","size":12},
+            {"name":"MaxSpeedVPN-v0.1.10-alpha-universal.apk","browser_download_url":"https://github.com/envywook/Lust/releases/download/v0.1.10-alpha/u.apk","size":20},
             {"name":"SHA256SUMS.txt","browser_download_url":"https://github.com/envywook/Lust/releases/download/v0.1.10-alpha/SHA256SUMS.txt","size":100}
           ]}
         ]""")
@@ -28,17 +28,17 @@ class UpdateCatalogTest {
         val update = UpdateCatalog.select(json, ReleaseVersion(0, 1, 9), listOf("arm64-v8a"))!!
 
         assertEquals("v0.1.10-alpha", update.tag)
-        assertEquals("Lust-v0.1.10-alpha-arm64-v8a.apk", update.apk.name)
+        assertEquals("MaxSpeedVPN-v0.1.10-alpha-arm64-v8a.apk", update.apk.name)
         assertEquals("SHA256SUMS.txt", update.checksums.name)
     }
 
     @Test
     fun `falls back to universal and rejects equal version`() {
         val assets = listOf(
-            ReleaseAsset("Lust-v0.1.10-alpha-x86.apk", "https://github.com/x.apk", 1),
-            ReleaseAsset("Lust-v0.1.10-alpha-universal.apk", "https://github.com/u.apk", 1),
+            ReleaseAsset("MaxSpeedVPN-v0.1.10-alpha-x86.apk", "https://github.com/x.apk", 1),
+            ReleaseAsset("MaxSpeedVPN-v0.1.10-alpha-universal.apk", "https://github.com/u.apk", 1),
         )
-        assertEquals("Lust-v0.1.10-alpha-universal.apk", UpdateCatalog.selectApk(assets, listOf("arm64-v8a"), "v0.1.10-alpha")!!.name)
+        assertEquals("MaxSpeedVPN-v0.1.10-alpha-universal.apk", UpdateCatalog.selectApk(assets, listOf("arm64-v8a"), "v0.1.10-alpha")!!.name)
         assertNull(UpdateCatalog.selectApk(assets, emptyList(), "v0.1.10-alpha"))
     }
 

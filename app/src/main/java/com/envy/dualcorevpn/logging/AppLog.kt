@@ -40,7 +40,7 @@ object LogFilter {
 
 /** Process-wide, persistent ring log used by UI, VPN service, and native callbacks. */
 object AppLog {
-    private const val TAG = "Lust"
+    private const val TAG = "MaxSpeedVPN"
     private const val MAX_FILE_BYTES = 2L * 1024L * 1024L
     private const val MAX_MEMORY_ENTRIES = 1_000
     private val lock = Any()
@@ -52,7 +52,7 @@ object AppLog {
         synchronized(lock) {
             if (logFile.get() != null) return
             directory.mkdirs()
-            val file = File(directory, "lust.log")
+            val file = File(directory, "maxspeedvpn.log")
             logFile.set(file)
             mutableEntries.value = readFrom(file).takeLast(MAX_MEMORY_ENTRIES)
         }
@@ -94,7 +94,7 @@ object AppLog {
     }
 
     private fun rotate(file: File) {
-        val previous = File(file.parentFile, "lust.previous.log")
+        val previous = File(file.parentFile, "maxspeedvpn.previous.log")
         previous.delete()
         file.renameTo(previous)
     }

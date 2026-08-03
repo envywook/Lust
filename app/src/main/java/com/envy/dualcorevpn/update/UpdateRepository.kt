@@ -64,7 +64,7 @@ class UpdateRepository(private val context: Context) {
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
-            error("Разреши установку из Lust и нажми «Обновить» ещё раз")
+            error("Разреши установку из MaxSpeedVPN и нажми «Обновить» ещё раз")
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
         context.startActivity(Intent(Intent.ACTION_VIEW).apply {
@@ -117,7 +117,7 @@ class UpdateRepository(private val context: Context) {
                 connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-                setRequestProperty("User-Agent", "Lust-Android/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", "MaxSpeedVPN-Android/${BuildConfig.VERSION_NAME}")
             }
             if (connection.responseCode in 300..399) {
                 val location = connection.getHeaderField("Location") ?: error("Перенаправление без адреса")

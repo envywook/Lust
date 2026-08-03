@@ -286,7 +286,7 @@ class MainActivity : ComponentActivity() {
                     onAddSubscription = ::addSubscription,
                     onUpdateSubscription = ::updateSubscription,
                     onRemoveSubscription = { repository.remove(it); reloadUi++ },
-                    onExportBackup = { backupExportLauncher.launch("lust-backup.json") },
+                    onExportBackup = { backupExportLauncher.launch("maxspeedvpn-backup.json") },
                     onImportBackup = { backupImportLauncher.launch(arrayOf("application/json", "text/plain")) },
                     updateStatus = updateStatus,
                     onCheckUpdate = ::checkForUpdate,

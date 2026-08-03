@@ -86,7 +86,7 @@ jobs:
           safe_ref="${GITHUB_REF_NAME//\//-}"
           for apk in "${apks[@]}"; do
             variant="$(basename "${apk}" | sed -E "s/^app-(.*)-${suffix}\\.apk$/\\1/")"
-            cp "${apk}" "dist/Lust-${safe_ref}-${variant}.apk"
+            cp "${apk}" "dist/MaxSpeedVPN-${safe_ref}-${variant}.apk"
           done
           (cd dist && sha256sum *.apk | sort | tee SHA256SUMS.txt)
 
@@ -185,7 +185,7 @@ jobs:
 
           tag, source, destination = sys.argv[1:]
           lines = Path(source).read_text().splitlines()
-          heading = f"# Lust {tag}"
+          heading = f"# MaxSpeedVPN {tag}"
           try:
               start = lines.index(heading)
           except ValueError:
@@ -195,7 +195,7 @@ jobs:
           PY
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "Lust ${GITHUB_REF_NAME}" \
+            --title "MaxSpeedVPN ${GITHUB_REF_NAME}" \
             --notes-file /tmp/current-release-notes.md \
             --prerelease \
             --verify-tag

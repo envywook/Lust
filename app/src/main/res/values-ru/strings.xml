@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Lust</string>
+    <string name="app_name">MaxSpeedVPN</string>
     <string name="vpn_channel_name">VPN-подключение</string>
     <string name="vpn_channel_description">Состояние VPN-подключения</string>
     <string name="status_connecting">Подключение…</string>
@@ -96,7 +96,7 @@
     <string name="mieru_import_cancel">Отмена</string>
     <string name="mieru_import_success">Сервер Mieru импортирован</string>
     <string name="mieru_import_invalid">Некорректная или неподдерживаемая ссылка Mieru</string>
-    <string name="quick_tile_label">Lust VPN</string>
+    <string name="quick_tile_label">MaxSpeedVPN</string>
     <string name="subscription_refresh_channel">Обновления подписок</string>
     <string name="subscription_refresh_changed">Обновлено подписок: %1$d</string>
     <string name="subscription_refresh_failed">Не удалось обновить: %1$s</string>
