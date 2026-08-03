@@ -1,3 +1,23 @@
+# MaxSpeedVPN v0.1.21-alpha
+
+## Ребрендинг: Lust → MaxSpeedVPN
+
+- приложение переименовано в MaxSpeedVPN: имя в лаунчере, быстрый тумблер VPN, логи и резервные копии;
+- новый логотип — градиентная иконка с буквой M во всех плотностях (включая round-вариант);
+- артефакты обновлений и release-ноты переименованы в MaxSpeedVPN-*;
+- встроенный обновлятор ищет новые APK по имени MaxSpeedVPN, update smoke приведён к новым именам логов;
+- release-подпись и applicationId не менялись — обновление с v0.1.20-alpha проходит штатно.
+
+## Проверка
+
+- unit tests, Android lint и сборка: успешно;
+- Xray и sing-box API 34 runtime smoke: пройдены в release workflow;
+- пять release APK публикуются с SHA-256 и постоянной release-подписью MaxSpeedVPN.
+
+> Alpha-сборка использует постоянную release-подпись MaxSpeedVPN.
+
+---
+
 # Lust v0.1.20-alpha
 
 ## Статистика активной VPN-сессии
