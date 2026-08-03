@@ -31,8 +31,8 @@ fail() {
 }
 
 snapshot() {
-  "$ADB" shell uiautomator dump /sdcard/lust-smoke-ui.xml >/dev/null
-  "$ADB" pull /sdcard/lust-smoke-ui.xml "$TMP_DIR/ui.xml" >/dev/null
+  "$ADB" shell uiautomator dump /sdcard/maxspeedvpn-smoke-ui.xml >/dev/null
+  "$ADB" pull /sdcard/maxspeedvpn-smoke-ui.xml "$TMP_DIR/ui.xml" >/dev/null
 }
 
 has_ui_label() {
@@ -151,7 +151,7 @@ for cycle in 1 2; do
   wait_for_ui_label "$connected_label"
   wait_for_vpn
 
-  runtime_log="$("$ADB" exec-out run-as "$PACKAGE" cat files/logs/lust.log 2>/dev/null || true)"
+  runtime_log="$("$ADB" exec-out run-as "$PACKAGE" cat files/logs/maxspeedvpn.log 2>/dev/null || true)"
   if [[ "$expected_engine" == "SING_BOX" ]]; then
     "$ADB" shell pidof libsingbox.so >/dev/null || fail "sing-box subprocess is not running in cycle $cycle"
     grep -q 'SING_BOX.*READY' <<<"$runtime_log" || fail "sing-box READY evidence missing in cycle $cycle"
